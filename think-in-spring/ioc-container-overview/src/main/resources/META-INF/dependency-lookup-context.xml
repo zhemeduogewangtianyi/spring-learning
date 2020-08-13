@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <bean id="user" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User">
+        <property name="id" value="1" />
+        <property name="name" value="xx" />
+    </bean>
+
+    <bean id="objectFactoryBean" class="org.springframework.beans.factory.config.ObjectFactoryCreatingFactoryBean">
+        <property name="targetBeanName" value="user" />
+    </bean>
+
+    <!--
+        parent 代表继承
+        primary 代表主要的 - 区分 user 和 superUser
+    -->
+    <bean id="superUser" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.SuperUser" parent="user" primary="true">
+        <property name="address" value="yy" />
+    </bean>
+
+</beans>

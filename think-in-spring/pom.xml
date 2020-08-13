@@ -9,6 +9,10 @@
     <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
+    <modules>
+        <module>ioc-container-overview</module>
+    </modules>
+
     <properties>
         <spring.version>5.2.2.RELEASE</spring.version>
     </properties>
@@ -38,10 +42,6 @@
 
     <!-- spring 依赖 -->
     <dependencies>
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-context</artifactId>
-        </dependency>
 
         <dependency>
             <groupId>org.springframework</groupId>
