@@ -208,12 +208,12 @@
 
 ##### 文件见代码：
 
-##### dependency-lookup-context.xml 
+##### dependency-lookup-context.xml 		--- 	Bean配置文件
 
-##### User.java
+##### User.java			----	用户实体
 
 ##### DependencyLookupDemo.java		---  启动入口
 
-##### SuperUser.java 	---  注解获取Bean
+##### SuperUser.java 	---  超级用户实体，注解获取Bean
 
 ##### Super.java			---	自定义注解
