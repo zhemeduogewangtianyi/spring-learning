@@ -18,6 +18,7 @@ public class DependencyInjectionDemo {
     public static void main(String[] args) {
         BeanFactory beanFactory = new ClassPathXmlApplicationContext("classpath:/META-INF/dependency-injection-context.xml");
 
+
         /** 自定义 Bean */
         UserRepository userRepository = (UserRepository)beanFactory.getBean("userRepository");
         System.out.println(userRepository.toString());
@@ -29,6 +30,11 @@ public class DependencyInjectionDemo {
 
         /** 依赖注入（内建依赖） */
         System.err.println(userRepository.getBeanFactory().equals(beanFactory));
+
+        ApplicationContext applicationContext = new ClassPathXmlApplicationContext("classpath:/META-INF/dependency-injection-context.xml");
+        System.err.println("UserRepository 里面的 BeanFactory : " + userRepository.getBeanFactory());
+        System.err.println("ApplicationContext : " + applicationContext);
+        System.err.println(userRepository.getBeanFactory().equals(applicationContext));
 
         /** 依赖查找 */
         ObjectFactory<ApplicationContext> objectFactory = userRepository.getObjectFactory();
@@ -45,6 +51,19 @@ public class DependencyInjectionDemo {
         /** 容易内建Bean */
         Environment environment = beanFactory.getBean(Environment.class);
         System.out.println("获取 Environment 类型的 Bean" + environment);
+
+        //谁才是 Spring IoC 的容器？
+        whoIsIocContainer(userRepository,beanFactory);
+
+    }
+
+
+    private static void whoIsIocContainer(UserRepository userRepository ,BeanFactory beanFactory){
+        System.err.println(userRepository.getBeanFactory().equals(beanFactory));
+    }
+
+    private static void whoIsIocContainer(UserRepository userRepository ,ApplicationContext beanFactory){
+        System.err.println(userRepository.getBeanFactory().equals(beanFactory));
     }
 
 }
