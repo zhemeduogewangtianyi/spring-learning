@@ -1033,3 +1033,1160 @@ https://docs.spring.io/spring/docs/current/spring-framework-reference/core.html#
 ### 运行是啥样的？
 
 伴随容器运行而运行，tomcat 管理整个线程状态，SpringBoot 内嵌 Tomcat 或者 WebServer（native webServer）来管理线程状态。
+
+
+
+
+
+## 11：来点 Spring IoC 的面试题。。。
+
+
+
+### 1：沙雕面试题：
+
+##### 	1：什么是 Spring IoC 容器？
+
+​	一般我面试的时候直接给面试那人DI（dependency injection）的一个实现，或者说是依赖翻转、再或者谈谈依赖注入的实现方式。
+
+​	这么说的话其实也不算错误。但是根据前面的学习，大家肯定能知道，除了依赖注入还有依赖查找（lookup），当然还有一些还没
+
+​	看到的一些其他特性。这样子才算完整的。其实每次遇到这个问题，我的内心都是笑开了花。
+
+
+
+​	官方也有一些回答：
+
+​	
+
+```html
+1.1. Introduction to the Spring IoC Container and Beans
+This chapter covers the Spring Framework implementation of the Inversion of Control (IoC) principle. IoC is also known as dependency injection (DI). It is a process whereby objects define their dependencies (that is, the other objects they work with) only through constructor arguments, arguments to a factory method, or properties that are set on the object instance after it is constructed or returned from a factory method. The container then injects those dependencies when it creates the bean. This process is fundamentally the inverse (hence the name, Inversion of Control) of the bean itself controlling the instantiation or location of its dependencies by using direct construction of classes or a mechanism such as the Service Locator pattern.
+
+
+1.1。 Spring IoC容器和Bean简介 
+本章介绍了反转控制（IoC）原则的Spring框架实现。 IoC也称为依赖注入（DI）。在此过程中，对象仅通过构造函数参数，工厂方法的参数或在构造或从工厂方法返回后在对象实例上设置的属性来定义其依赖项（即，与它们一起使用的其他对象） 。然后，容器在创建bean时注入那些依赖项。此过程从根本上讲是通过使用类的直接构造或诸如服务定位器模式之类的控件来控制其依赖项的实例化或位置的bean本身的逆过程（因此称为Control Inversion）。
+```
+
+​	
+
+其实官网有时候也是表述不清楚，导致大家误解。
+
+#### 	IoC is also known as dependency injection (DI) 
+
+​	大意：
+
+##### 		IoC 也成为了依赖注入（DI）。其实 DI 应该说是 IoC 实现的一种。。并不只是 IoC ，因为 IoC 也包括了 依赖查找。
+
+
+
+###  It is a process whereby objects define their dependencies (that is, the other objects they work with) only through constructor arguments, arguments to a factory method, or properties that are set on the object instance after it is constructed or returned from a factory method.
+
+
+
+大意：
+
+​	在依赖注入（DI）的时候，会伴随着一个状态的依赖。
+
+#### 	状态依赖是指什么？
+
+​		这里指的是我们可以通过构造方法，或者工厂方法，以及属性的 getter/setter 方式，注入一些其他的对象，完成依赖注入。
+
+​	然后容器会把依赖注入（DI）的对象，放进创建的 Bean 里面来。
+
+```java
+@Component
+public class Test{
+    
+    //这样可以
+    @Autowired
+    private ApplicationContext;
+    
+    //这样也可以
+    @Autowired
+    public Test(ApplicationContext applicationContext){
+        this.applicationContext = applicationContext;
+    }
+    
+    public ApplicationContext getApplicationContext(){
+        return this.applicationContext;
+    }
+    
+    //或者这样。。。
+    @Autowired
+    public void setApplicationContext(ApplicationContext applicationContext){
+        this.applicationContext = applicationContext;
+    }
+    
+}
+```
+
+
+
+#### 其实这里Spring 为什么只说依赖注入不说依赖查找？
+
+​	因为在 Java EE 时代，依赖查找就已经被实现掉了。DI 其实也部分实现了，只不过要和 Java EE 进行区分。
+
+```java
+//在这。。
+BeanInfo beanInfo = Introspector.getBeanInfo(Student.class,Object.class);
+```
+
+
+
+
+
+
+
+
+
+### 2：BeanFactory 和 FactoryBean 的区别？
+
+
+
+我记得这是当年让菜的开花的我，无比苦恼的一个问题。一般都是什么 996 面试大厂喜欢问。。
+
+我第一次回答的时候，直接告诉对方 **这俩单词不一样**。 然后对方那边就信号不好，然后就没有然后了。。。
+
+其实这里我们可以这样回答，毕竟我们前面看过了 BeanFactory 和 ApplicationContext。虽然不太明白 FactoryBean是啥，相信大家
+
+也有梁静茹给的勇气胡说八道一番。
+
+先说知道的：
+
+##### 	首先呢 BeanFactory 是 IoC 的一个底层容器。（但是这里会有人否定。。BeanFactory 什么时候成了 IoC 的底层容器了？？？！！）
+
+​	如果他这么问你了。。。那么把我的 github 地址给他，我来教他做人。（本人专业劝退）
+
+不知道的我来告诉你：
+
+##### 	FactoryBean 是创建 Bean 的一种方式，帮助实现复杂的初始化逻辑。
+
+
+
+这里找到 BeanFactory 的源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory;
+
+import org.springframework.lang.Nullable;
+
+/**
+ * Interface to be implemented by objects used within a {@link BeanFactory} which
+ * are themselves factories for individual objects. If a bean implements this
+ * interface, it is used as a factory for an object to expose, not directly as a
+ * bean instance that will be exposed itself.
+ *
+ 	这是一个实现了 Object 的接口，这个Object 里面有这么几个特性。这个特性就是为了帮助你去暴露
+ 	一个 Bean 。这个 Bean 通常来说不是一个正常的 Bean ,或者不是一个能够简单处理的 Bean 。
+ 	
+ 	例如：
+ 	其实可以看我们的 User.java 这个类，他就一个默认的空参构造。那么通过反射的方式就能实现一个
+ 	调用。就算有构造器参数我们也能通过反射的方式，把构造器参数注入进来。但是现实中有时候没那么简单。
+ 	假设 User.java 是通过第三方来进行创建的，这时候就没法反射获取构造方法进行初始化。所以这个时候
+ 	就可以选择 FactoryBean 的方式来操作
+ 
+ * <p><b>NB: A bean that implements this interface cannot be used as a normal bean.</b>
+ * A FactoryBean is defined in a bean style, but the object exposed for bean
+ * references ({@link #getObject()}) is always the object that it creates.
+ *
+ * <p>FactoryBeans can support singletons and prototypes, and can either create
+ * objects lazily on demand or eagerly on startup. The {@link SmartFactoryBean}
+ * interface allows for exposing more fine-grained behavioral metadata.
+ *
+ * <p>This interface is heavily used within the framework itself, for example for
+ * the AOP {@link org.springframework.aop.framework.ProxyFactoryBean} or the
+ * {@link org.springframework.jndi.JndiObjectFactoryBean}. It can be used for
+ * custom components as well; however, this is only common for infrastructure code.
+ *
+ * <p><b>{@code FactoryBean} is a programmatic contract. Implementations are not
+ * supposed to rely on annotation-driven injection or other reflective facilities.</b>
+ * {@link #getObjectType()} {@link #getObject()} invocations may arrive early in
+ * the bootstrap process, even ahead of any post-processor setup. If you need access
+ * other beans, implement {@link BeanFactoryAware} and obtain them programmatically.
+ *
+ * <p>Finally, FactoryBean objects participate in the containing BeanFactory's
+ * synchronization of bean creation. There is usually no need for internal
+ * synchronization other than for purposes of lazy initialization within the
+ * FactoryBean itself (or the like).
+ *
+ * @author Rod Johnson
+ * @author Juergen Hoeller
+ * @since 08.03.2003
+ * @param <T> the bean type
+ * @see org.springframework.beans.factory.BeanFactory
+ * @see org.springframework.aop.framework.ProxyFactoryBean
+ * @see org.springframework.jndi.JndiObjectFactoryBean
+ */
+public interface FactoryBean<T> {
+
+	/**
+	 * The name of an attribute that can be
+	 * {@link org.springframework.core.AttributeAccessor#setAttribute set} on a
+	 * {@link org.springframework.beans.factory.config.BeanDefinition} so that
+	 * factory beans can signal their object type when it can't be deduced from
+	 * the factory bean class.
+	 * @since 5.2
+	 */
+	String OBJECT_TYPE_ATTRIBUTE = "factoryBeanObjectType";
+
+
+	/**
+	 * Return an instance (possibly shared or independent) of the object
+	 * managed by this factory.
+	 * <p>As with a {@link BeanFactory}, this allows support for both the
+	 * Singleton and Prototype design pattern.
+	 * <p>If this FactoryBean is not fully initialized yet at the time of
+	 * the call (for example because it is involved in a circular reference),
+	 * throw a corresponding {@link FactoryBeanNotInitializedException}.
+	 * <p>As of Spring 2.0, FactoryBeans are allowed to return {@code null}
+	 * objects. The factory will consider this as normal value to be used; it
+	 * will not throw a FactoryBeanNotInitializedException in this case anymore.
+	 * FactoryBean implementations are encouraged to throw
+	 * FactoryBeanNotInitializedException themselves now, as appropriate.
+	 * @return an instance of the bean (can be {@code null})
+	 * @throws Exception in case of creation errors
+	 * @see FactoryBeanNotInitializedException
+	 
+	 这个方法会被容器调用，容器怎么知道这个方法要被调用？
+	 前提就是 getObjectType()
+	 
+	 问题:这个方法是不是每次都会被调用？
+	 答：不是。。
+	 
+	 */
+	@Nullable
+	T getObject() throws Exception;
+
+	/**
+	 * Return the type of object that this FactoryBean creates,
+	 * or {@code null} if not known in advance.
+	 * <p>This allows one to check for specific types of beans without
+	 * instantiating objects, for example on autowiring.
+	 * <p>In the case of implementations that are creating a singleton object,
+	 * this method should try to avoid singleton creation as far as possible;
+	 * it should rather estimate the type in advance.
+	 * For prototypes, returning a meaningful type here is advisable too.
+	 * <p>This method can be called <i>before</i> this FactoryBean has
+	 * been fully initialized. It must not rely on state created during
+	 * initialization; of course, it can still use such state if available.
+	 * <p><b>NOTE:</b> Autowiring will simply ignore FactoryBeans that return
+	 * {@code null} here. Therefore it is highly recommended to implement
+	 * this method properly, using the current state of the FactoryBean.
+	 * @return the type of object that this FactoryBean creates,
+	 * or {@code null} if not known at the time of the call
+	 * @see ListableBeanFactory#getBeansOfType
+	 
+	 决定哪个对象要去做事情。
+	 问题来了。。。加入我对象类型相同怎么办？
+	 那么就通过是不是单利的方式来进行区分。。。下面的哪个 isSingleton()
+	 如果每次获取的都是同一个对象（isSingleton() 始终返回 true ），说明
+	 是同一个对象，否则就不是同一个对象。
+	 
+	 */
+	@Nullable
+	Class<?> getObjectType();
+
+	/**
+	 * Is the object managed by this factory a singleton? That is,
+	 * will {@link #getObject()} always return the same object
+	 * (a reference that can be cached)?
+	 * <p><b>NOTE:</b> If a FactoryBean indicates to hold a singleton object,
+	 * the object returned from {@code getObject()} might get cached
+	 * by the owning BeanFactory. Hence, do not return {@code true}
+	 * unless the FactoryBean always exposes the same reference.
+	 * <p>The singleton status of the FactoryBean itself will generally
+	 * be provided by the owning BeanFactory; usually, it has to be
+	 * defined as singleton there.
+	 * <p><b>NOTE:</b> This method returning {@code false} does not
+	 * necessarily indicate that returned objects are independent instances.
+	 * An implementation of the extended {@link SmartFactoryBean} interface
+	 * may explicitly indicate independent instances through its
+	 * {@link SmartFactoryBean#isPrototype()} method. Plain {@link FactoryBean}
+	 * implementations which do not implement this extended interface are
+	 * simply assumed to always return independent instances if the
+	 * {@code isSingleton()} implementation returns {@code false}.
+	 * <p>The default implementation returns {@code true}, since a
+	 * {@code FactoryBean} typically manages a singleton instance.
+	 * @return whether the exposed object is a singleton
+	 * @see #getObject()
+	 * @see SmartFactoryBean#isPrototype()
+	 */
+	default boolean isSingleton() {
+		return true;
+	}
+
+}
+
+```
+
+
+
+这里可以看到 FactoryBean 是创建 Bean 的一个方式，这种方式可以解决复杂的构造场景或者初始化场景这么一个问题。。
+
+
+
+#### 估计这个时候面试官会有第二个问题：
+
+##### 	FactoryBean 创建的 Bean 会不会再去经过 Bean 的生命周期呢？
+
+​	记住这个问题。。。后面 Bean 生命周期部分深入讨论。。
+
+
+
+
+
+
+
+### 3：Spring IoC 容器启动时做了哪些准备工作？（当时差点被劝退）
+
+​	
+
+​	刚才只是做了一些非常浅显的学习。真正的重点这个时候说不出来的。
+
+​	比如说：
+
+​		BeanFactory 的一个扩展功能，这个扩展功能里面就是千变万化的。。。比如说增加了注解驱动，
+
+包括了 Aware 接口的回调，都在里面操作的。现在还没学到。（**容器初始化、回调，着重进行说明**）
+
+
+
+目前阶段可以这么说：
+
+#### 	答：IoC 配置元信息读取和解析（xml 读取、Bean 读取）、IoC 容器生命周期、Spring 事件发布（事件可以停止）、国际化等等。
+
+
+
+
+
+
+
+
+
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+# Spring Bean 的基础部分。
+
+
+
+#### 	1：定义 Spring Bean
+
+​			Spring Bean 和 Java Bean 的区别
+
+#### 	2：BeanDefinition 元信息
+
+​			定义 Spring Bean 的时候会有一些元信息，包括 BeanDefinition 这样的元信息是怎么呈现的。
+
+#### 	3：命名 Spring Bean
+
+​			Spring Bean 的名字是不是必须的？
+
+#### 	4：Spring Bean 别名
+
+​			Bean 的别名为什么一定需要？什么场景需要 Bean 的别名？
+
+#### 	5：注册 Spring Bean
+
+​			如何注册一个 Spring Bean，他和 BeanDefinition 有什么区别？
+
+#### 	6：实例化 Spring Bean
+
+​			如何把 Spring Bean 从 BeanDefinition 实例化成为一个 Spring Bean
+
+#### 	7：初始化 Spring Bean
+
+​			有哪些手段进行初始化？
+
+#### 	8：延迟初始化 Spring Bean
+
+​			如何延迟初始化 Spring Bean？
+
+#### 	9：销毁 Spring Bean
+
+​			如何销毁 Spring Bean？比如线程池，数据库连接池。
+
+#### 	10：垃圾回收 Spring Bean
+
+​			怎么回收 Spring Bean ？
+
+#### 	11：面试题
+
+
+
+
+
+
+
+
+
+## 1：定义 Bean：什么是BeanDefinition ？
+
+
+
+### 1：什么是 BeanDefinition ？
+
+
+
+### 2：BeanDefinition 是 Spring Framework 中定义 Bean 的配置元信息接口，包含：
+
+​	
+
+#### 		· Bean 的类名
+
+​				包含包名（全路径类名），对应的类必须是一个具体的实现类。
+
+#### 		· Bean 行为元素，比如 作用域、自动绑定的模式、生命周期回调等。
+
+​				自动绑定就是 @Autowired 这种方式。
+
+​				生命周期回调就比如说生命周期初始化、销毁时候的一个回调。比如：InitializingBean，在初始化之前做一些事情。
+
+#### 		· 其他 Bean 引用，又可称为 合作者（Collaborators）或者 依赖（Dependencies）
+
+​				合作者可以认为是 Bean 的引用关系，或者称之为依赖。比如说依赖注入，也是把合作者或者是说把引用的 Bean 注入到自己本身里面来。
+
+​				当然依赖注入不仅仅是注入 Bean ，还可以注入其他配置。
+
+​				
+
+#### 		· 配置设置，比如 Bean 属性（Properties）
+
+​				假设 Bean 正好对应一个线程池，或者数据库连接池。这时候这个 Bean 可能包含一些大小或者一些相关的属性。
+
+
+
+
+
+
+
+
+
+## 2：BeanDefinition 元信息：除了 Bean 名称和类名，还有哪些 Bean 元信息值得关注？
+
+
+
+#### 1：BeanDefinition 的属性：
+
+
+
+|     属性（Property）     |                             说明                             |
+| :----------------------: | :----------------------------------------------------------: |
+|          Class           |        Bean 全类名，必须是具体类，不能用抽象类或接口         |
+|           Name           |                       Bean 的名称或 ID                       |
+|          Scope           |        Bean 的作用域（如：Singleton、propertype 等）         |
+|  Constractor arguments   |        Bean 构造器参数（用于依赖注入，比如第三方API）        |
+|        Properties        |         Bean 属性设置（用于依赖注入，setter/getter）         |
+|     Autowiring mode      | Bean 自动绑定模式（如：通过名称 byName，byType，byConstructor）<br />把属性和外面的引用自动的关联，或者自动绑定（容器或者 Bean 的配置的元信息） |
+| Lazy initialization mode |      Bean 延迟加载模式（延迟和非延迟）<br />默认非延迟       |
+|  initialization method   |                   Bean 初始化回调方法名称                    |
+|    Destruction method    |                    Bean 销毁回调方法名称                     |
+
+
+
+
+
+#### 2：如何构建 BeanDefinition？
+
+
+
+#### 	· 通过 BeanDefinitionBuilder
+
+​			这种方式通过 xml 配置的方式会比较多一点。
+
+
+
+#### 	· 通过 AbstractBeanDefinition 以及派生类
+
+
+
+
+
+##### 本次新增文件：
+
+​	1：创建一个新的模块在 thinking-in-spring 下，命名为 spring-bean。
+
+​	2：pom 相关依赖
+
+​	3：BeanDefinitionCreationDemo.java
+
+
+
+##### pom 文件
+
+```java
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>think-in-spring</artifactId>
+        <groupId>org.example</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>spring-bean</artifactId>
+    <description>Spring Bean 基础</description>
+
+    <dependencies>
+        <!-- Spring Ioc 核心依赖 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- 复用之前的 Spring IoC 部分内容 -->
+        <dependency>
+            <groupId>${groupId}</groupId>
+            <artifactId>ioc-container-overview</artifactId>
+            <version>${version}</version>
+        </dependency>
+
+    </dependencies>
+
+</project>
+```
+
+
+
+首先看到 BeanDefinitionBuilder 的构建方式，这个类里面大量的静态方法，有两种构建 BeanDefinition 的方法：
+
+```java
+genericBeanDefinition() 构建一个普通的 BeanDefinition
+rootBeanDefinition()    构建一个 root BeanDefinition
+```
+
+这个类里面的静态方法是帮我们构建一个 BeanDefinitionBuilder 用的，仔细看一下，这玩意全部返回的都是 BeanDefinitionBuilder。
+
+但是也有一些实例方法，让我们挑着用。假如我们要构造他的一个构造方法，或者是 parent 的名称，他这里全部都有实现。
+
+例1：
+
+​	添加一个构造方法的值：
+
+```java
+/**
+	 * Add an indexed constructor arg value. The current index is tracked internally
+	 * and all additions are at the present point.
+	 */
+	public BeanDefinitionBuilder addConstructorArgValue(@Nullable Object value) {
+		this.beanDefinition.getConstructorArgumentValues().addIndexedArgumentValue(
+				this.constructorArgIndex++, value);
+		return this;
+	}
+```
+
+
+
+例2：
+
+​	构造方法中的参数用一个 Bean 的方式去引用：
+
+```java
+/**
+	 * Add a reference to a named bean as a constructor arg.
+	 * @see #addConstructorArgValue(Object)
+	 */
+	public BeanDefinitionBuilder addConstructorArgReference(String beanName) {
+		this.beanDefinition.getConstructorArgumentValues().addIndexedArgumentValue(
+				this.constructorArgIndex++, new RuntimeBeanReference(beanName));
+		return this;
+	}
+```
+
+
+
+### 那么 genericBeanDefinition 和 rootBeanDefinition 有什么区别？
+
+​	genericBeanDefinitionBuilder 是创建一个非根，非顶层的 BeanDefinition，他可以有 parent。
+
+​	rootBeanDefinitionBuilder 不可以有 parent 的 BeanDefinition，因为他根。
+
+
+
+
+
+## 总结：
+
+#### 	如何定义 BeanDefinition 有两种方式：
+
+#### 		第一种是通过 BeanDefinitionBuilder 里面的静态方法来创建 BeanDefinition。
+
+#### 		BeanDefinitionBuilder 里面主要有两种构建 BeanDefinition 的方法（其实三种，还一个 children 的。。），一个是普通的BeanDefinition 通过 genericBeanDefination() 的方式来创建，另外一个是 rootBeanDefinition() 的方式创建一个根 BeanDefinition。并且支持链式添加属性给 Bean 对象
+
+
+
+#### 		第二种是通过 AbstractBeanDefinition 以及他的派生子类来创建 BeanDefinition，比如：GenericBeanDefinition。
+
+#### 这个也支持链式调用的方式给 Bean 对象添加属性，并且还能批量。
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 1：命名 Spring Bean： id 属性和 name 属性命名 Bean，哪个更好？
+
+
+
+### 1：命名 Spring Bean
+
+
+
+#### 	Bean 的名称：
+
+#### 			每个 Bean 拥有一个或者多个标识符（identifiers），这些标识符在 Bean 所在的容器必须是唯一的。
+
+#### 			这里指的唯一是这个 Bean 在 BeanFactory 或者 BeanDefinition 里面必须要是唯一的。
+
+#### 			这些标识符会用到两个方面，一个是依赖查找，一个就是我们之前说的那个依赖注入。
+
+#### 			通常，一个 Bean 仅有一个标识符，如果需要额外的，可以考虑使用别名（Alias）来扩展。
+
+#### 
+
+
+
+#### 			在基于 XML 的配置元信息中（不一定是本地的 XML ，也可以是网络上的一些资源，比如前段时间有个
+
+#### 			朋友就问到我 CND 是什么。。。），开发人员可以用 id 或者 name 属性来规定 Bean 的标识符（identifiers）。
+
+#### 		（这里的 id 或者 name 指的就是 XML 标签里面的元素属性，来鉴定 Bean 的识别符）。
+
+
+
+#### 			通常 Bean 的标识符由字母组成，允许出现特殊符号（没有正则表达式，没有正则表达式，没有正则表达式。）。
+
+#### 			如果想引用 Bean 的别名的话，可以在 name 属性使用半角英文 （ , ） 或者 （ ; ）来分隔。
+
+
+
+#### 			Bean 的 id 或 name 属性并非必须制定，如果留空的话（这里指在 XML 中没有定义 id 或者 name 属性的话），
+
+#### 			容器会为 Bean 自动生成一个唯一的名称。
+
+#### 			Bean 的命名尽管没有限制，不过官方建议采用驼峰命名，因为驼峰命名更符合 Java 的命名规范。
+
+
+
+#### 	
+
+
+
+#### · Bean 名称生成器（BeanNameGenerator）
+
+
+
+#### 			· 由 Spring Framework 2.0.3 引入，框架内建两种实现方式：
+
+
+
+##### 				· DefaultBeanNameGenerator：
+
+##### 						默认引用 BeanNameGenerator 的实现。
+
+
+
+##### 				· AnnotationBeanNameGenerator：
+
+##### 						基于注解扫描的 BeanNameGenerator 实现，始于 Spring Framework 2.5。比如：@Component 就是 Spring Framework 2.5 开始有的。
+
+##### 
+
+#### 关联的官方文档：[1.3.1. Naming Beans](https://docs.spring.io/spring/docs/current/spring-framework-reference/core.html#beans-beanname)
+
+```html
+
+With component scanning in the classpath, Spring generates bean names for unnamed components, following the rules described earlier: essentially, taking the simple class name and turning its initial character to lower-case. However, in the (unusual) special case when there is more than one character and both the first and second characters are upper case, the original casing gets preserved. These are the same rules as defined by java.beans.Introspector.decapitalize (which Spring uses here).
+
+通过在类路径中进行组件扫描，Spring会按照前面描述的规则为未命名的组件生成Bean名称：本质上，采用简单的类名称并将其初始字符转换为小写。但是，在（不寻常的）特殊情况下，如果有多个字符并且第一个和第二个字符均为大写字母，则会保留原始大小写。这些规则与java.beans.Introspector.decapitalize（Spring在此使用）定义的规则相同。
+```
+
+
+
+#### BeanNameGenerator 源码部分：
+
+##### 接口定义：
+
+```java
+/*
+ * Copyright 2002-2007 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ 
+	 帮助我们没有指定 id 和 name 的 Bean 来生成 beanName 的规范。
+ 
+ */
+
+package org.springframework.beans.factory.support;
+
+import org.springframework.beans.factory.config.BeanDefinition;
+
+/**
+ * Strategy interface for generating bean names for bean definitions.
+ *
+ * @author Juergen Hoeller
+ * @since 2.0.3		<- 出现版本
+ */
+public interface BeanNameGenerator {
+
+	/**
+	 * Generate a bean name for the given bean definition.
+	 * @param definition the bean definition to generate a name for
+	 * @param registry the bean definition registry that the given definition
+	 * is supposed to be registered with
+	 * @return the generated bean name
+	 
+	 需要两个参数，一个是 BeanDefinition（Bean 的定义），另外一个是 BeanDefinitionRegistry（Bean 定义的一个注册中心）
+	 
+	 最终返回一个 String , 你猜猜这个 String 是什么。。。
+	 
+	 */
+	String generateBeanName(BeanDefinition definition, BeanDefinitionRegistry registry);
+
+}
+
+```
+
+
+
+
+
+##### 默认实现：DefaultBeanNameGenerator
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.support;
+
+import org.springframework.beans.factory.config.BeanDefinition;
+
+/**
+ * Default implementation of the {@link BeanNameGenerator} interface, delegating to
+ * {@link BeanDefinitionReaderUtils#generateBeanName(BeanDefinition, BeanDefinitionRegistry)}.
+ *
+ * @author Juergen Hoeller
+ * @since 2.0.3		<- 版本在这里。。low 一眼知道就行。
+ */
+public class DefaultBeanNameGenerator implements BeanNameGenerator {
+
+	/**
+	 * A convenient constant for a default {@code DefaultBeanNameGenerator} instance,
+	 * as used for {@link AbstractBeanDefinitionReader} setup.
+	 * @since 5.2 	<-  后面这家伙改版了，换成了一个单例的方式来做。估计是节约内存开销。
+	 
+	 这里有个问题：为什么用单例了，没有把构造器变成 private 私有化的？这不像是单例啊 ！
+	 
+	 因为这玩意最开始在2.0.3版本就写毁了，肯定很多低版本的人再用，这时候低版本的人生了个级。改了一个5.2.2。可想而知，类注释上这人会被人喷死。
+	 所以为了版本兼容，private 想用却又不敢用。所以说我们再用这个类的时候，有了两种选择，第一：一错到底，我就用那个老的。。
+	 第二：用这个单例的。怎么做，大家自己看心情就好了。
+	 
+	 */
+	public static final DefaultBeanNameGenerator INSTANCE = new DefaultBeanNameGenerator();
+
+
+    /**
+    	这是先前的方式，用 BeanDefinitionReaderUtils 类里的静态方法来做的。
+    */
+	@Override
+	public String generateBeanName(BeanDefinition definition, BeanDefinitionRegistry registry) {
+		return BeanDefinitionReaderUtils.generateBeanName(definition, registry);
+	}
+
+}
+
+```
+
+
+
+##### BeanDefinitionReaderUtils.generateBeanName( definition , registry ) 源码部分：
+
+```java
+/**
+	 * Generate a bean name for the given top-level bean definition,
+	 * unique within the given bean factory.
+	 * @param beanDefinition the bean definition to generate a bean name for
+	 * @param registry the bean factory that the definition is going to be
+	 * registered with (to check for existing bean names)
+	 * @return the generated bean name
+	 * @throws BeanDefinitionStoreException if no unique name can be generated
+	 * for the given bean definition
+	 * @see #generateBeanName(BeanDefinition, BeanDefinitionRegistry, boolean)
+	 */
+	public static String generateBeanName(BeanDefinition beanDefinition, BeanDefinitionRegistry registry)
+			throws BeanDefinitionStoreException {
+
+		return generateBeanName(beanDefinition, registry, false);
+	}
+```
+
+
+
+##### generateBeanName( beanDefinition , registry , false ); 源码部分：
+
+```java
+/**
+	 * Generate a bean name for the given bean definition, unique within the
+	 * given bean factory.
+	 * @param definition the bean definition to generate a bean name for
+	 * @param registry the bean factory that the definition is going to be
+	 * registered with (to check for existing bean names)
+	 * @param isInnerBean whether the given bean definition will be registered
+	 * as inner bean or as top-level bean (allowing for special name generation
+	 * for inner beans versus top-level beans)
+	 * @return the generated bean name
+	 * @throws BeanDefinitionStoreException if no unique name can be generated
+	 * for the given bean definition
+	 */
+	public static String generateBeanName(
+			BeanDefinition definition, BeanDefinitionRegistry registry, boolean isInnerBean)
+			throws BeanDefinitionStoreException {
+
+        //拿到 Bean 的 class。
+		String generatedBeanName = definition.getBeanClassName();
+		if (generatedBeanName == null) {
+			if (definition.getParentName() != null) {
+				generatedBeanName = definition.getParentName() + "$child";
+			}
+			else if (definition.getFactoryBeanName() != null) {
+				generatedBeanName = definition.getFactoryBeanName() + "$created";
+			}
+		}
+		if (!StringUtils.hasText(generatedBeanName)) {
+			throw new BeanDefinitionStoreException("Unnamed bean definition specifies neither " +
+					"'class' nor 'parent' nor 'factory-bean' - can't generate bean name");
+		}
+
+		String id = generatedBeanName;
+        
+        // Bean 里面嵌套 Bean 的情况，这样处理。
+		if (isInnerBean) {
+			// Inner bean: generate identity hashcode suffix. 
+            //这里就是你 debugger 的时候为什么会看到你的 Bean 有 # 分割并且带个数字或者字符的原因。
+			id = generatedBeanName + GENERATED_BEAN_NAME_SEPARATOR + ObjectUtils.getIdentityHexString(definition);
+		}
+		else {
+			// Top-level bean: use plain class name with unique suffix if necessary.
+            //这个就简单了，这个就是你的 beanName 是唯一的情况
+			return uniqueBeanName(generatedBeanName, registry);
+		}
+		return id;
+	}
+```
+
+
+
+##### uniqueBeanName( generatedBeanName , registry ); 源码部分：
+
+```java
+/**
+	 * Turn the given bean name into a unique bean name for the given bean factory,
+	 * appending a unique counter as suffix if necessary.
+	 * @param beanName the original bean name
+	 * @param registry the bean factory that the definition is going to be
+	 * registered with (to check for existing bean names)
+	 * @return the unique bean name to use
+	 * @since 5.1
+	 */
+	public static String uniqueBeanName(String beanName, BeanDefinitionRegistry registry) {
+		String id = beanName;
+		int counter = -1;
+
+
+        //数字从 0 开始累加，这里的限定就是 统计一下我的注册中心里面到底有多少个相同的 Bean。 registry.containsBeanDefinition(id)
+        //代码不贴了。。。看一个 DefaultListableBeanFactory的源码  this.beanDefinitionMap.containsKey(beanName);
+        
+		// Increase counter until the id is unique.        
+		while (counter == -1 || registry.containsBeanDefinition(id)) {
+			counter++;
+            // beanName + # + 阿拉伯数字。
+			id = beanName + GENERATED_BEAN_NAME_SEPARATOR + counter;
+		}
+		return id;
+	}
+```
+
+
+
+
+
+##### GeneratorBeanName 注解实现 AnnotationBeanNameGenerator：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context.annotation;
+
+import java.beans.Introspector;
+import java.util.Map;
+import java.util.Set;
+
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanNameGenerator;
+import org.springframework.core.annotation.AnnotationAttributes;
+import org.springframework.core.type.AnnotationMetadata;
+import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
+import org.springframework.util.ClassUtils;
+import org.springframework.util.StringUtils;
+
+/**
+
+	这里写了一下。我们常用的 
+					@Component
+					@Repository
+					@Service
+					@Controller
+					都在用这种方式默默地为咱们生成没有定义 id 和 name 的 beanName，再次致敬。
+
+	这里，@Repository 这个注解点进去，会吓死你。里面加了个 @Component，可以理解为 @Repository 是一个 @Component
+	这玩意存在的意义是啥？
+	为了我们注解的方式来服务的。后面讲。
+	
+	因为 @Component 注解是 Spring Framework 2.5 开始支持的，所以说这里 AnnotationBeanNameGenerator 最起码也是2.5开始支持的
+	
+	
+
+ * {@link org.springframework.beans.factory.support.BeanNameGenerator}
+ * implementation for bean classes annotated with the
+ * {@link org.springframework.stereotype.Component @Component} annotation
+ * or with another annotation that is itself annotated with
+ * {@link org.springframework.stereotype.Component @Component} as a
+ * meta-annotation. For example, Spring's stereotype annotations (such as
+ * {@link org.springframework.stereotype.Repository @Repository}) are
+ * themselves annotated with
+ * {@link org.springframework.stereotype.Component @Component}.
+ *
+ * <p>Also supports Java EE 6's {@link javax.annotation.ManagedBean} and
+ * JSR-330's {@link javax.inject.Named} annotations, if available. Note that
+ * Spring component annotations always override such standard annotations.
+ *
+ * <p>If the annotation's value doesn't indicate a bean name, an appropriate
+ * name will be built based on the short name of the class (with the first
+ * letter lower-cased). For example:
+ *
+ * <pre class="code">com.xyz.FooServiceImpl -&gt; fooServiceImpl</pre>
+ *
+ * @author Juergen Hoeller
+ * @author Mark Fisher
+ * @since 2.5
+ * @see org.springframework.stereotype.Component#value()
+ * @see org.springframework.stereotype.Repository#value()
+ * @see org.springframework.stereotype.Service#value()
+ * @see org.springframework.stereotype.Controller#value()
+ * @see javax.inject.Named#value()
+ */
+public class AnnotationBeanNameGenerator implements BeanNameGenerator {
+
+	/**
+	 * A convenient constant for a default {@code AnnotationBeanNameGenerator} instance,
+	 * as used for component scanning purposes.
+	 * @since 5.2
+	 
+	 5.2这个版本，就在这个类里面，写代码这家伙继续用同样的方式写了个单例（和 DefaultBeanNameGenerator 一样的方式）
+	 
+	 为什么这个地方不用 private 的构造？ 我相信你知道的。
+	 
+	 */
+	public static final AnnotationBeanNameGenerator INSTANCE = new AnnotationBeanNameGenerator();
+
+	private static final String COMPONENT_ANNOTATION_CLASSNAME = "org.springframework.stereotype.Component";
+
+
+	@Override
+	public String generateBeanName(BeanDefinition definition, BeanDefinitionRegistry registry) {
+        
+        //如果是注解方式创建 BeanDefinition 的话，这里的 BeanDefinition 会被标识称一个 AnnotationBeanDefinition
+        
+		if (definition instanceof AnnotatedBeanDefinition) {
+			String beanName = determineBeanNameFromAnnotation((AnnotatedBeanDefinition) definition);
+			if (StringUtils.hasText(beanName)) {
+				// Explicit bean name found.
+				return beanName;
+			}
+		}
+        
+        //如果不是新出现的 AnnotationDefinition ，就会采用这种补偿的机制来生成 beanName.主要是为了兼容。
+        
+		// Fallback: generate a unique default bean name.
+		return buildDefaultBeanName(definition, registry);
+	}
+
+	/**
+	 * Derive a bean name from one of the annotations on the class.
+	 * @param annotatedDef the annotation-aware bean definition
+	 * @return the bean name, or {@code null} if none is found
+	 */
+	@Nullable
+	protected String determineBeanNameFromAnnotation(AnnotatedBeanDefinition annotatedDef) {
+		AnnotationMetadata amd = annotatedDef.getMetadata();
+		Set<String> types = amd.getAnnotationTypes();
+		String beanName = null;
+		for (String type : types) {
+			AnnotationAttributes attributes = AnnotationConfigUtils.attributesFor(amd, type);
+			if (attributes != null && isStereotypeWithNameValue(type, amd.getMetaAnnotationTypes(type), attributes)) {
+				Object value = attributes.get("value");
+				if (value instanceof String) {
+					String strVal = (String) value;
+					if (StringUtils.hasLength(strVal)) {
+						if (beanName != null && !strVal.equals(beanName)) {
+							throw new IllegalStateException("Stereotype annotations suggest inconsistent " +
+									"component names: '" + beanName + "' versus '" + strVal + "'");
+						}
+						beanName = strVal;
+					}
+				}
+			}
+		}
+		return beanName;
+	}
+
+	/**
+	 * Check whether the given annotation is a stereotype that is allowed
+	 * to suggest a component name through its annotation {@code value()}.
+	 * @param annotationType the name of the annotation class to check
+	 * @param metaAnnotationTypes the names of meta-annotations on the given annotation
+	 * @param attributes the map of attributes for the given annotation
+	 * @return whether the annotation qualifies as a stereotype with component name
+	 */
+	protected boolean isStereotypeWithNameValue(String annotationType,
+			Set<String> metaAnnotationTypes, @Nullable Map<String, Object> attributes) {
+
+		boolean isStereotype = annotationType.equals(COMPONENT_ANNOTATION_CLASSNAME) ||
+				metaAnnotationTypes.contains(COMPONENT_ANNOTATION_CLASSNAME) ||
+				annotationType.equals("javax.annotation.ManagedBean") ||
+				annotationType.equals("javax.inject.Named");
+
+		return (isStereotype && attributes != null && attributes.containsKey("value"));
+	}
+
+	/**
+	 * Derive a default bean name from the given bean definition.
+	 * <p>The default implementation delegates to {@link #buildDefaultBeanName(BeanDefinition)}.
+	 * @param definition the bean definition to build a bean name for
+	 * @param registry the registry that the given bean definition is being registered with
+	 * @return the default bean name (never {@code null})
+	 */
+	protected String buildDefaultBeanName(BeanDefinition definition, BeanDefinitionRegistry registry) {
+		return buildDefaultBeanName(definition);
+	}
+
+	/**
+	
+	这个就是 java beans 里面的哪个 Introspecor 的那个处理 Abbb 或者 AnBs 这种命名的方法。
+	也就是那个把你的包名去掉，然后首字母开头小写那玩意。
+	
+	 * Derive a default bean name from the given bean definition.
+	 * <p>The default implementation simply builds a decapitalized version
+	 * of the short class name: e.g. "mypackage.MyJdbcDao" -> "myJdbcDao".
+	 * <p>Note that inner classes will thus have names of the form
+	 * "outerClassName.InnerClassName", which because of the period in the
+	 * name may be an issue if you are autowiring by name.
+	 * @param definition the bean definition to build a bean name for
+	 * @return the default bean name (never {@code null})
+	 */
+	protected String buildDefaultBeanName(BeanDefinition definition) {
+		String beanClassName = definition.getBeanClassName();
+		Assert.state(beanClassName != null, "No bean class name set");
+		String shortClassName = ClassUtils.getShortName(beanClassName);
+		return Introspector.decapitalize(shortClassName);
+	}
+
+}
+
+```
+
+
+
+
+
+### 总结：
+
+​	通过看这些源码，相信大家都能知道 Spring Bean 是怎么命名的了，他有两种方式：
+
+​		1：容器通过 BeanNameGenerator 接口的实现类给我们帮忙生成 beanName，他有两个实现类：
+
+​				1：DefaultBeanNameGenerator 出现在 2.0.3版本，被一个沙雕写了个坑，在5.2版本修复了，但是单例不敢用 private。
+
+​				2：AnnotationBeanNameGenerator 出现在 2.5 版本，跟随 @Component 他们一起出现的，这个里面加入了对 AnnotationBeanDefinition 的支持，
+
+​				与此同时兼容了老版本，另外还加入了 java.beans 包下的 Introspector 类，来帮忙生成把全类名生成为一个 首字母小写的 beanName。
+
+​	
+
+​	标题说的 id 和 name 那种命名方式好呢？
+
+​		都用到注解了。。。你就都别写得了。。你要是非用 xml 的方式定义 Bean 的话，并且还是2.0.3那块的版本，建议你自己写一个 beanName，id 或者 name 你随意。。但是要看你版本有多低，id 要求全局唯一，name 要求当前应用上下文唯一。
