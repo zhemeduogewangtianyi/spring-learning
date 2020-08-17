@@ -22,7 +22,7 @@ public class AnnotationApplicationContextAsIocContainerDemo {
         //注解配置 ApplicationContext 的实现 - @纪波 大神给的路子。
         AnnotationConfigApplicationContext annotationConfigApplicationContext = new AnnotationConfigApplicationContext();
 
-        //将当前类 作为 Configuration class 注册 bean  - 相当与有了 @Configuration
+        //将当前类 作为 Configuration class 注册 bean  - 相当于有了 @Configuration
         annotationConfigApplicationContext.register(AnnotationApplicationContextAsIocContainerDemo.class);
 
         //启动应用上下文
