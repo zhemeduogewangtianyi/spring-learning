@@ -19,10 +19,10 @@ public class AnnotationApplicationContextAsIocContainerDemo {
     public static void main(String[] args) {
 
         //创建 BeanFactory 容器
-        //注解配置 ApplicationContext 的实现 - @姜纪波 大神给的路子。
+        //注解配置 ApplicationContext 的实现 - @纪波 大神给的路子。
         AnnotationConfigApplicationContext annotationConfigApplicationContext = new AnnotationConfigApplicationContext();
 
-        //将当前类 作为 Configuration class 注册 bean  - 相当与游乐 @Configuration
+        //将当前类 作为 Configuration class 注册 bean  - 相当与有了 @Configuration
         annotationConfigApplicationContext.register(AnnotationApplicationContextAsIocContainerDemo.class);
 
         //启动应用上下文
