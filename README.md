@@ -1682,7 +1682,7 @@ rootBeanDefinition()    构建一个 root BeanDefinition
 
 #### 			在基于 XML 的配置元信息中（不一定是本地的 XML ，也可以是网络上的一些资源，比如前段时间有个
 
-#### 			朋友就问到我 CND 是什么。。。），开发人员可以用 id 或者 name 属性来规定 Bean 的标识符（identifiers）。
+#### 			朋友就问到我 CDN 是什么。。。），开发人员可以用 id 或者 name 属性来规定 Bean 的标识符（identifiers）。
 
 #### 		（这里的 id 或者 name 指的就是 XML 标签里面的元素属性，来鉴定 Bean 的识别符）。
 
