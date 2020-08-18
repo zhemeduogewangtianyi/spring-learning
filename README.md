@@ -2190,3 +2190,119 @@ public class AnnotationBeanNameGenerator implements BeanNameGenerator {
 ​	标题说的 id 和 name 那种命名方式好呢？
 
 ​		都用到注解了。。。你就都别写得了。。你要是非用 xml 的方式定义 Bean 的话，并且还是2.0.3那块的版本，建议你自己写一个 beanName，id 或者 name 你随意。。但是要看你版本有多低，id 要求全局唯一，name 要求当前应用上下文唯一。
+
+
+
+
+
+
+
+
+
+
+
+## 2：Spring Bean 的别名： 为什么命名 Bean 还需要别名？
+
+
+
+### 1：Bean 的别名到底有什么价值？
+
+
+
+##### 	· 复用现有的  BeanDefinition
+
+​		因为别名不能无中生有，必须有现行的 BeanDefinition 在上下文里面有配置
+
+​	
+
+##### 	· 更具有场景化的命名方法，比如：
+
+```java
+<alias name = "myProject-dataSource" alias = "subsystemA-dataSource" />
+<alias name = "myProject-dataSource" alias = "subsystemB-dataSource" />
+```
+
+ 
+
+##### 本章新增文件来应用别名的场景：
+
+​	1：在 spring-bean 模块下的 resources 目录下建立一个 META-INF 文件夹
+
+​	2：建立一个 bean-definitions-context.xml 文件
+
+```java
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+   <!-- 复用 dependency-lookup-context.xml 文件，相当于第三方 Spring XML 配置文件 -->
+    <import resource="classpath:/META-INF/dependency-lookup-context.xml" />
+
+    <!-- 将 dependency-lookup-context.xml 文件中（可以说是 Spring 容器中） 的 user 建立别名为 alias-user -->
+    <alias name="user" alias="alias-user" />
+
+</beans>
+```
+
+​	3：新增 BeanAliasDemo.java 
+
+
+
+```java
+package org.example.thinking.in.spring.bean.definition;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+
+/**
+ * Bean 别名示例 - 通过依赖查找的方式来进行演示 Spring Bean 的 别名
+ * @author WTY
+ * @date 2020/8/18 23:02
+ **/
+public class BeanAliasDemo {
+
+    public static void main(String[] args) {
+
+        //配置 XML 文件
+        //启动 Spring 上下文
+        BeanFactory beanFactory = new ClassPathXmlApplicationContext("classpath:/META-INF/bean-definitions-context.xml");
+
+        // 通过别名 alias-user 查找曾用名为 user 的 User 对象
+        User aliasUser = beanFactory.getBean("alias-user", User.class);
+
+        //获取老的 user 对象
+        User user = beanFactory.getBean("user", User.class);
+
+        //true 说明这两个对象是同一个对象
+        System.out.println("alias-user == user : " + (aliasUser == user));
+
+
+    }
+
+}
+
+```
+
+
+
+#### 	依赖查找也可以通过 #别名# 的方式去进行查找，可想而知，底层肯定有一个 beanName 和 beanAliasName 的一个映射，
+
+#### 	好比找到别名之后就可以找到对应的名称，再通过名称去找到 对应的 Bean，相当于一个间接的关系。
+
+#### 	在 Bean 的生命周期和 Bean 的元信息配置的时候具体展开说明。
+
+
+
+
+
+#### 总结：
+
+​	通过这个小 demo 可以看出，Bean 的名称和 Bean 的别名用起来并没有什么区别。只不过 BeanAliasName 在场景化方面会更加具体一点。
+
+很多时候，我们的应用会用到一些第三方的 jar 包，或者是相关依赖资源。这时候我们不需要用原始的命名方式从 BeanFactory 中获取 Bean ，
+
+可以根据 aliasName 来进行更场景化的一个依赖查找或者依赖注入。
+
