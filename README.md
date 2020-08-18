@@ -2356,7 +2356,7 @@ public class BeanAliasDemo {
 
 ##### 新增文件：
 
-##### 	AnnotationBeanDefinitionDemo.java
+##### 	AnnotationBeanDefinitionRegisterDemo.java
 
 
 
@@ -2364,8 +2364,10 @@ public class BeanAliasDemo {
 package org.example.thinking.in.spring.bean.definition;
 
 import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
-import org.springframework.beans.factory.config.BeanDefinition;
-import org.springframework.beans.factory.support.*;
+import org.springframework.beans.factory.support.AbstractBeanDefinition;
+import org.springframework.beans.factory.support.BeanDefinitionBuilder;
+import org.springframework.beans.factory.support.BeanDefinitionReaderUtils;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -2379,8 +2381,8 @@ import java.util.Map;
  * @author WTY
  * @date 2020/8/18 23:42
  **/
-@Import(AnnotationBeanDefinitionDemo.ConfigurationClass.class)
-public class AnnotationBeanDefinitionDemo {
+@Import(AnnotationBeanDefinitionRegisterDemo.ConfigurationClass.class)
+public class AnnotationBeanDefinitionRegisterDemo {
 
     /*
 
@@ -2410,7 +2412,7 @@ public class AnnotationBeanDefinitionDemo {
 //        annotationConfigApplicationContext.register(ConfigurationClass.class);
 
         //实验把我当前类作为一个 Bean ，同时把当前类里面的 ConfigurationClass 当做一个 Bean
-        annotationConfigApplicationContext.register(AnnotationBeanDefinitionDemo.class);
+        annotationConfigApplicationContext.register(AnnotationBeanDefinitionRegisterDemo.class);
 
 
         //通过 BeanDefinition JAVA API 来实现 BeanDefinition 注册，同一个上下文 beanName 要唯一，不要和下面 User 的 @Bean 的名字重复
