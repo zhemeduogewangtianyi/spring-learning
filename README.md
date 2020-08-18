@@ -1163,7 +1163,7 @@ BeanInfo beanInfo = Introspector.getBeanInfo(Student.class,Object.class);
 
 
 
-这里找到 BeanFactory 的源码：
+这里找到 FactoryBean 的源码：
 
 ```java
 /*
