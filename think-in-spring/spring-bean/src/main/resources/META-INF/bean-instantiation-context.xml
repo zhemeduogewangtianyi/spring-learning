@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- 有参构造 创建 Bean -->
+    <bean id="constructor-user-arg" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User">
+        <constructor-arg name="id" value="2" />
+        <constructor-arg name="name" value="constructor-user" />
+    </bean>
+
+    <!-- 空参构造 创建 Bean -->
+    <bean id="constructor-user-no-arg" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User" />
+
+    <!-- 通过 静态方法创建 bean -->
+    <bean id="user-by-static-method" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User" factory-method="createUser" >
+        <!-- setter 方法赋值 -->
+        <property name="id" value="19" />
+        <property name="name" value="小周" />
+    </bean>
+
+    <!-- 实例（Bean）方法创建 Bean -->
+    <bean id="user-by-instantiation-method" factory-bean="userFactory" factory-method="createUser" />
+
+    <!-- 抽象工厂方法创建 Bean 如果这里想不定义 Bean 的名称，就要保证抽象类 UserFactory 的子类有且只有一个，就是他。但是我就要多个。。。 -->
+    <bean id="userFactory" class="org.example.thinking.in.spring.bean.definition.factory.DefaultUserFactory" />
+
+    <!-- FactoryBean 创建 User Bean , UserFactoryBean 里面不是直接去定义一个User Bean ,而是去定义一个 BeanFactory，产生连接 -->
+    <bean id="user-by-factory-bean" class="org.example.thinking.in.spring.bean.definition.factory.UserFactoryBean" />
+
+</beans>

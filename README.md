@@ -2563,3 +2563,838 @@ public class AnnotationBeanDefinitionRegisterDemo {
 		-> generateBeanName()
 			->	uniqueBeanName()
 ```
+
+
+
+
+
+
+
+
+
+## 4：实例化 Spring Bean ： Bean实例化的方式有多少种？
+
+
+
+### 1：Bean 的实例化（Instantiation）
+
+
+
+#### 	· 常规方式：
+
+##### 		· 通过构造器（配置元信息：XML、Java注解、Java API）
+
+​				包括空参构造和带参构造，可以参照  **AnnotationBeanDefinitionRegisterDemo.java**
+
+##### 		· 通过静态工厂（配置元信息：XML、Java API）
+
+​				通过静态方法实例化 Bean，->  **工厂模式**
+
+##### 		· 通过 Bean 工厂方法（配置元信息：XML、Java API）
+
+​				工厂模式：实例的工厂方法。 -> **抽象工厂模式**
+
+##### 		· 通过 FactoryBean （配置元信息：XML、Java注解、Java API）
+
+​				处理 Bean 的复杂逻并且实例化，比如三方包中的 Bean。
+
+
+
+#### 	· 特殊方式：
+
+##### 		· 通过 ServiceLoadFactoryBean （配置元信息：XML、Java注解、Java API）
+
+​				ServiceLoad 是 Java 传统的一个 API，SPI机制，Dubbo注册中心的选择，mybatis 接口具体实现类等，都有用到。
+
+​				通过 Java 的 ServiceLoad API  可以通过一个接口或者类的的方式来加载 classPath 上面的资源文件。
+
+##### 		· 通过 AutowrieCapableBeanFactory#createBean( Class , int , boolean )
+
+​				把 Bean 的类型穿进去，来产生一个Bean
+
+##### 		· 通过 BeanDefinitionBeanFactory#registerBeanFactory( String , BeanDefinition )
+
+​				这个可以参照 **AnnotationBeanDefinitionRegisterDemo.java 的 registerUserDefinition(BeanDefinitionRegistery , String , Class )** 方法
+
+
+
+
+
+#### 本章新增文件：
+
+
+
+##### 普通的 Spring Bean 实例化代码：
+
+​	spring-bean 模块下 resources/META-INF/**bean-instantiation-context.xml**
+
+​	spring-overview 模块下 **User.java** 增加静态工厂方法。
+
+​	根 pom 修改 maven 编译级别：**think-in-spring/pom.xml**
+
+​	spring-bean 模块下 **UserFactory.java**
+
+​	spring-bean 模块下 **DefaultUserFactory.java**
+
+​	spring-bean 模块下 **UserFactoryBean.java**
+
+​	spring-bean 模块下 **BeanInstantiationDemo.java**
+
+
+
+##### 特殊 Spring Bean 实例化代码：
+
+​	spring-bean 模块下 resources/META-INF/**bean-instantiation-context.xml**
+
+​	spring-bean 模块下 **SpecialBeanInstantiationDemo.java**
+
+
+
+
+
+### 普通的 Spring Bean 实例化方式：
+
+
+
+**bean-instantiation-context.xml 代码如下：**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- 有参构造 创建 Bean -->
+    <bean id="constructor-user-arg" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User">
+        <constructor-arg name="id" value="2" />
+        <constructor-arg name="name" value="constructor-user" />
+    </bean>
+
+    <!-- 空参构造 创建 Bean -->
+    <bean id="constructor-user-no-arg" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User" />
+
+    <!-- 通过 静态方法创建 bean -->
+    <bean id="user-by-static-method" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User" factory-method="createUser" >
+        <!-- setter 方法赋值 -->
+        <property name="id" value="19" />
+        <property name="name" value="小周" />
+    </bean>
+
+    <!-- 实例（Bean）方法创建 Bean -->
+    <bean id="user-by-instantiation-method" factory-bean="userFactory" factory-method="createUser" />
+
+    <!-- 抽象工厂方法创建 Bean 如果这里想不定义 Bean 的名称，就要保证抽象类 UserFactory 的子类有且只有一个，就是他。但是我就要多个。。。 -->
+    <bean id="userFactory" class="org.example.thinking.in.spring.bean.definition.factory.DefaultUserFactory" />
+
+    <!-- FactoryBean 创建 User Bean , UserFactoryBean 里面不是直接去定义一个User Bean ,而是去定义一个 BeanFactory，产生连接 -->
+    <bean id="user-by-factory-bean" class="org.example.thinking.in.spring.bean.definition.factory.UserFactoryBean" />
+
+</beans>
+```
+
+
+
+**User.java 代码如下：**
+
+```java
+package org.example.thinking.in.spring.ioc.overview.dependency.domain;
+
+/**
+ * 万能的用户类
+ * @author WTY
+ * @date 2020/8/13 23:31
+ **/
+public class User {
+
+    private Long id;
+
+    private String name;
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+        System.err.println("id setter 方法");
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+        System.err.println("name setter 方法");
+    }
+
+    public User(){
+        System.err.println("空参构造");
+    }
+
+    public User(Long id, String name) {
+        this.id = id;
+        this.name = name;
+        System.err.println("有参构造");
+    }
+
+    @Override
+    public String toString() {
+        return "User{" +
+                "id=" + id +
+                ", name='" + name + '\'' +
+                '}';
+    }
+
+    /**
+     * 创建 User ，通过 XML 种 bean 标签 factory-method
+     * 具体的 XML 配置见 spring-bean 模块下的  resources/META/INF/bean-creation-context.xml
+     *
+     * @author WTY
+     * @date 2020/8/19 23:43
+     * @since Spring Bean 实例化有多少种方式
+     * @return org.example.thinking.in.spring.ioc.overview.dependency.domain.User
+     **/
+    public static User createUser(){
+        //bean 标签的属性会盖住这里的属性
+        User user = new User();
+        user.setId(88L);
+        user.setName("沙雕");
+        return user;
+    }
+
+}
+
+```
+
+
+
+**think-in-spring/pom.xml 代码如下：**
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.example</groupId>
+    <artifactId>think-in-spring</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>ioc-container-overview</module>
+        <module>spring-bean</module>
+    </modules>
+
+    <properties>
+        <spring.version>5.2.2.RELEASE</spring.version>
+    </properties>
+
+    <!-- spring 依赖管理 -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-context</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-jdbc</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-webflux</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- spring 依赖 -->
+    <dependencies>
+
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webflux</artifactId>
+        </dependency>
+
+    </dependencies>
+
+    <!-- 修改编译级别，把 jdk1.5 改成 jdk1.8 -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.1</version>
+                <configuration>
+                    <source>1.8</source>
+                    <target>1.8</target>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
+```
+
+
+
+**UserFactory.java 代码如下：**
+
+```java
+package org.example.thinking.in.spring.bean.definition.factory;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+
+/**
+ * User 抽象工厂类 {@link User}
+ * @author WTY
+ * @date 2020/8/20 0:04
+ **/
+public interface UserFactory {
+
+    default User createUser(){
+        return User.createUser();
+    }
+
+}
+
+```
+
+
+
+**DefaultUserFactory.java 代码如下：**
+
+```java
+package org.example.thinking.in.spring.bean.definition.factory;
+
+/**
+ * 默认 UserFactory 的实现 {@link UserFactory}
+ * @author WTY
+ * @date 2020/8/20 0:11
+ **/
+public class DefaultUserFactory implements UserFactory {
+}
+
+```
+
+
+
+ **UserFactoryBean.java 代码如下：**
+
+```java
+package org.example.thinking.in.spring.bean.definition.factory;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+import org.springframework.beans.factory.FactoryBean;
+
+/**
+ * {@link User} User FactoryBean 的实现 {@link org.springframework.beans.factory.FactoryBean}
+ * @author WTY
+ * @date 2020/8/20 0:32
+ **/
+public class UserFactoryBean implements FactoryBean {
+    @Override
+    public Object getObject() throws Exception {
+        return User.createUser();
+    }
+
+    @Override
+    public Class<?> getObjectType() {
+        return User.class;
+    }
+
+    //Spring 5 之后 isSingleton() 用了 java 8 的 default 方法，默认为单例。
+
+}
+
+```
+
+
+
+**BeanInstantiationDemo.java 代码如下：**
+
+```java
+package org.example.thinking.in.spring.bean.definition;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+
+/**
+ * Bean 实例化 示例
+ * @author WTY
+ * @date 2020/8/19 23:51
+ **/
+public class BeanInstantiationDemo {
+
+    public static void main(String[] args) {
+
+        //配置 XML 文件 -> bean-instantiation-context.xml
+
+        //启动 Spring 应用上下文
+        BeanFactory beanFactory = new ClassPathXmlApplicationContext("classpath:/META-INF/bean-instantiation-context.xml");
+
+        //有参构造器创建
+        User constructorUserArg = beanFactory.getBean("constructor-user-arg", User.class);
+        System.out.println("constructorUserArg ：" + constructorUserArg);
+
+        //空载构造器创建
+        User constructorUserNoArg = beanFactory.getBean("constructor-user-no-arg", User.class);
+        System.out.println("constructorUserNoArg ：" + constructorUserNoArg);
+
+        //获取 静态方法实例的 User Bean 对象
+        User userByStaticMethod = beanFactory.getBean("user-by-static-method", User.class);
+        System.out.println("userByStaticMethod ：" + userByStaticMethod);
+
+        //获取 实例方法创建的 User Bean 对象
+        User userByInstantiationMethod = beanFactory.getBean("user-by-instantiation-method", User.class);
+        System.out.println("userByInstantiationMethod ：" + userByInstantiationMethod);
+
+
+        System.err.println("静态方法实例的 User == 实例方法创建的 Bean 吗 -> " + (userByStaticMethod == userByInstantiationMethod));
+
+        User userByFactoryBean = beanFactory.getBean("user-by-factory-bean", User.class);
+
+        System.out.println("userByFactoryBean ：" + userByFactoryBean);
+
+        System.out.println("实例方法创建的 User Bean 和 UserFactoryBean 创建的 User 是同一个吗？ -> " + (userByInstantiationMethod == userByFactoryBean));
+
+
+    }
+
+}
+
+```
+
+
+
+
+
+### 特殊的 Spring Bean 实例化方式：
+
+
+
+**bean-instantiation-context.xml 代码如下：**
+
+```xml
+
+```
+
+
+
+##### java.util.ServiceLoader 出现于 jdk1.6 ，具体可以看看这些博客的示例：
+
+https://www.cnblogs.com/aspirant/p/10616704.html
+
+https://www.jianshu.com/p/7601ba434ff4
+
+https://www.cnblogs.com/lwbqqyumidi/p/11991748.html
+
+
+
+Spring 给出适配 ServiceLoader 实现的类是：**ServiceLoaderFactoryBean.java**
+
+```java
+/*
+ * Copyright 2002-2007 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.serviceloader;
+
+import java.util.ServiceLoader;
+
+import org.springframework.beans.factory.BeanClassLoaderAware;
+
+/**
+ * {@link org.springframework.beans.factory.FactoryBean} that exposes the
+ * JDK 1.6 {@link java.util.ServiceLoader} for the configured service class.
+ *
+ * @author Juergen Hoeller
+ * @since 2.5
+ * @see java.util.ServiceLoader
+ */
+public class ServiceLoaderFactoryBean extends AbstractServiceLoaderBasedFactoryBean implements BeanClassLoaderAware {
+
+	@Override
+	protected Object getObjectToExpose(ServiceLoader<?> serviceLoader) {
+		return serviceLoader;
+	}
+
+	@Override
+	public Class<?> getObjectType() {
+		return ServiceLoader.class;
+	}
+
+}
+
+```
+
+
+
+ServiceLoaderFactoryBean 实例化 UserFactory 需要结合 AbstractFactoryBean 中的 **getObject()** 方法，ServiceLoaderFactoryBean 属于 AbstractFactoryBean 的子类。这里代码太多。。。只看调用链路代码。（想看完整的自己去看源码）
+
+```java
+	@Override
+	public final T getObject() throws Exception {
+        //是单例的话就创建一个 单例
+		if (isSingleton()) {
+			return (this.initialized ? this.singletonInstance : getEarlySingletonInstance());
+		}
+		else {
+            //不是单例就创建这么个玩意。
+			return createInstance();
+		}
+	}
+```
+
+
+
+这里我选择看单例的：**getEarlySingletonInstance()**
+
+```java
+/**
+	 * Determine an 'early singleton' instance, exposed in case of a
+	 * circular reference. Not called in a non-circular scenario.
+	 */
+	@SuppressWarnings("unchecked")
+	private T getEarlySingletonInstance() throws Exception {
+		Class<?>[] ifcs = getEarlySingletonInterfaces();
+		if (ifcs == null) {
+			throw new FactoryBeanNotInitializedException(
+					getClass().getName() + " does not support circular references");
+		}
+		if (this.earlySingletonInstance == null) {
+            //这里会产生一个代理（动态代理），这个代理会动态的生成一些东西。
+			this.earlySingletonInstance = (T) Proxy.newProxyInstance(
+					this.beanClassLoader, ifcs, new EarlySingletonInvocationHandler());
+		}
+		return this.earlySingletonInstance;
+	}
+```
+
+
+
+**EarlySingletonInvocationHandler()**
+
+```java
+/**
+	 * Reflective InvocationHandler for lazy access to the actual singleton object.
+	 */
+	private class EarlySingletonInvocationHandler implements InvocationHandler {
+
+		@Override
+		public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+			if (ReflectionUtils.isEqualsMethod(method)) {
+				// Only consider equal when proxies are identical.
+				return (proxy == args[0]);
+			}
+			else if (ReflectionUtils.isHashCodeMethod(method)) {
+				// Use hashCode of reference proxy.
+				return System.identityHashCode(proxy);
+			}
+			else if (!initialized && ReflectionUtils.isToStringMethod(method)) {
+				return "Early singleton proxy for interfaces " +
+						ObjectUtils.nullSafeToString(getEarlySingletonInterfaces());
+			}
+			try {
+				return method.invoke(getSingletonInstance(), args);
+			}
+			catch (InvocationTargetException ex) {
+				throw ex.getTargetException();
+			}
+		}
+	}
+```
+
+
+
+非单例的也看一眼吧。。**createInstance()**
+
+```java
+	/**
+	 * Template method that subclasses must override to construct
+	 * the object returned by this factory.
+	 * <p>Invoked on initialization of this FactoryBean in case of
+	 * a singleton; else, on each {@link #getObject()} call.
+	 * @return the object returned by this factory
+	 * @throws Exception if an exception occurred during object creation
+	 * @see #getObject()
+	 */
+	protected abstract T createInstance() throws Exception;
+```
+
+
+
+ServiceLoadFactoryBean 的话会有一个具体的实现：**AbstractServiceLoaderBasedFactoryBean.java** # createInstance()
+
+```java
+	
+	@Nullable
+	private Class<?> serviceType;
+
+	/**
+	 * Return the desired service type.
+	 */
+	@Nullable
+	public Class<?> getServiceType() {
+        //这里的 serviceType 是给 UserFactory 用的，需要我们在 xml 中给出具体的配置。
+		return this.serviceType;
+	}
+
+
+	/**
+	 * Delegates to {@link #getObjectToExpose(java.util.ServiceLoader)}.
+	 * @return the object to expose
+	 */
+	@Override
+	protected Object createInstance() {
+		Assert.notNull(getServiceType(), "Property 'serviceType' is required");
+        //获取我们配置的接口是哪一个，然后通过给的类加载器去加载这个接口下的子类，这个方法里就是一个迭代器的操作。
+		return getObjectToExpose(ServiceLoader.load(getServiceType(), this.beanClassLoader));
+	}
+
+	
+```
+
+
+
+**getObjectToExpose(ServiceLoader.load(getServiceType(), this.beanClassLoader));**  这里只是给了一个抽象的定义
+
+```java
+	/**
+	 * Determine the actual object to expose for the given ServiceLoader.
+	 * <p>Left to concrete subclasses.
+	 * @param serviceLoader the ServiceLoader for the configured service class
+	 * @return the object to expose
+	 */
+	protected abstract Object getObjectToExpose(ServiceLoader<?> serviceLoader);
+```
+
+
+
+具体实现看：**ServiceFactoryBean.java**  这个类从 Spring 2.5 开始有的，这个只会读取 UserFactory 的一个子类返回。
+
+```java
+package org.springframework.beans.factory.serviceloader;
+
+import java.util.Iterator;
+import java.util.ServiceLoader;
+
+import org.springframework.beans.factory.BeanClassLoaderAware;
+import org.springframework.lang.Nullable;
+
+/**
+ * {@link org.springframework.beans.factory.FactoryBean} that exposes the
+ * 'primary' service for the configured service class, obtained through
+ * the JDK 1.6 {@link java.util.ServiceLoader} facility.
+ *
+ * @author Juergen Hoeller
+ * @since 2.5
+ * @see java.util.ServiceLoader
+ */
+public class ServiceFactoryBean extends AbstractServiceLoaderBasedFactoryBean implements BeanClassLoaderAware {
+
+	@Override
+	protected Object getObjectToExpose(ServiceLoader<?> serviceLoader) {
+		Iterator<?> it = serviceLoader.iterator();
+		//循环的获取我们接口下的子类
+        if (!it.hasNext()) {
+			throw new IllegalStateException(
+					"ServiceLoader could not find service for type [" + getServiceType() + "]");
+		}
+        //这个地方返回有且仅有一个。
+		return it.next();
+	}
+
+	@Override
+	@Nullable
+	public Class<?> getObjectType() {
+		return getServiceType();
+	}
+
+}
+
+```
+
+
+
+问题：我定义的接口有很多个实现，我都想加载怎么办？
+
+答：用 **ServiceListFactoryBean.java** 这个类来做，这个类同样出自 Spring 2.5
+
+
+
+```java
+package org.springframework.beans.factory.serviceloader;
+
+import java.util.LinkedList;
+import java.util.List;
+import java.util.ServiceLoader;
+
+import org.springframework.beans.factory.BeanClassLoaderAware;
+
+/**
+ * {@link org.springframework.beans.factory.FactoryBean} that exposes <i>all</i>
+ * services for the configured service class, represented as a List of service objects,
+ * obtained through the JDK 1.6 {@link java.util.ServiceLoader} facility.
+ *
+ * @author Juergen Hoeller
+ * @since 2.5
+ * @see java.util.ServiceLoader
+ */
+public class ServiceListFactoryBean extends AbstractServiceLoaderBasedFactoryBean implements BeanClassLoaderAware {
+
+	@Override
+	protected Object getObjectToExpose(ServiceLoader<?> serviceLoader) {
+		List<Object> result = new LinkedList<>();
+        //循环获取，添加到一个 List 里面，同意返回
+		for (Object loaderObject : serviceLoader) {
+			result.add(loaderObject);
+		}
+		return result;
+	}
+
+	@Override
+	public Class<?> getObjectType() {
+		return List.class;
+	}
+
+}
+
+```
+
+
+
+**SpecialBeanInstantiationDemo.java 代码如下：**
+
+```java
+package org.example.thinking.in.spring.bean.definition;
+
+import org.example.thinking.in.spring.bean.definition.factory.DefaultUserFactory;
+import org.example.thinking.in.spring.bean.definition.factory.UserFactory;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+
+import java.util.Iterator;
+import java.util.ServiceLoader;
+
+/**
+ * 特殊的 Bean 实例化示例
+ * @author WTY
+ * @date 2020/8/20 0:45
+ **/
+public class SpecialBeanInstantiationDemo {
+
+    public static void main(String[] args) {
+
+        //配置 XML 文件 -> special-bean-instantiation-context.xml
+
+        //创建 BeanFactory
+        BeanFactory beanFactory = new ClassPathXmlApplicationContext("classpath:/META-INF/special-bean-instantiation-context.xml");
+
+        // SPI ServiceLoader 调用演示
+        serviceLoaderDemo();
+
+        ServiceLoader<UserFactory> userFactoryByServiceLoader = beanFactory.getBean("userFactoryByServiceLoader", ServiceLoader.class);
+
+        //通过 Spring 实例化 ServiceLoader 来获取 UserFactory
+        displayServiceLoaderDemo(userFactoryByServiceLoader);
+
+
+        //2：通过 AutowireCapableBeanFactory 来实例化 UserFactory
+        ApplicationContext applicationContext = new ClassPathXmlApplicationContext("classpath:/META-INF/special-bean-instantiation-context.xml");
+
+        //通过 ApplicationContext 来获取 AutowireCapableBeanFactory 对象，因为 ClassPathXmlApplicationContext 无法获取到 AutowireCapableBeanFactory 这个对象
+        AutowireCapableBeanFactory autowireCapableBeanFactory = applicationContext.getAutowireCapableBeanFactory();
+
+        //创建 Spring Bean 的时候一定不要用接口。。。
+//        UserFactory esayUserFactoryByAutowireCapableBeanFactory = autowireCapableBeanFactory.createBean(UserFactory.class);
+
+        UserFactory esayUserFactoryByAutowireCapableBeanFactory = autowireCapableBeanFactory.createBean(DefaultUserFactory.class);
+
+        System.out.println(esayUserFactoryByAutowireCapableBeanFactory.createUser());
+
+        UserFactory instantiationUserFactoryByAutowireCapableBeanFactory = (UserFactory)autowireCapableBeanFactory.createBean(DefaultUserFactory.class, AutowireCapableBeanFactory.AUTOWIRE_BY_TYPE, true);
+
+        System.out.println(instantiationUserFactoryByAutowireCapableBeanFactory.createUser());
+
+
+        //通过 AnnotationConfigApplicationContext 创建 Bean
+
+        AnnotationConfigApplicationContext annotationConfigApplicationContext = new AnnotationConfigApplicationContext();
+        annotationConfigApplicationContext.register(DefaultUserFactory.class);
+        annotationConfigApplicationContext.refresh();
+        DefaultUserFactory bean = annotationConfigApplicationContext.getBean(DefaultUserFactory.class);
+        System.out.println(bean.createUser());
+
+    }
+
+
+    /** 这个会逐一输出多个 实现 */
+    public static void serviceLoaderDemo(){
+
+        //通过传入接口 + 类加载器的方式去获得 UserFactory
+        ServiceLoader<UserFactory> userFactoryServiceLoader = ServiceLoader.load(UserFactory.class, Thread.currentThread().getContextClassLoader());
+
+        displayServiceLoaderDemo(userFactoryServiceLoader);
+    }
+
+    /** 这里只会输出一个实现 */
+    public static void displayServiceLoaderDemo(ServiceLoader<UserFactory> userFactoryServiceLoader){
+        //迭代器遍历取出 - 这里会去重的。。。算得上是 jdk 里面的 翻转控制，遵循好莱坞原则 - 你不要来找我，我来找你。
+        Iterator<UserFactory> car = userFactoryServiceLoader.iterator();
+        while(car.hasNext()){
+            UserFactory next = car.next();
+            System.out.println(next.createUser());
+        }
+    }
+
+}
+
+```
+
+
+
+### 总结：
+
+​	我们通过常规方式和特殊方式来创建 Bean ，相信大家都会对 XML、Java注解、Java API 配置 Bean 有所收获。
+
+常规方式创建 Bean，主要为 构造方法，setter方法，普通方法、静态方法这么四种创建方式，通过 ClassPathXmlApplicationContext 来获取 BeanFactory，从而调用 getBean() 方法获取 Bean。
+
+特殊方式，主要是通过 jdk提供的 Serviceloader 来作为控制翻转的基础，结合 Spring 的 ServiceLoaderFactoryBean 对 jdk 的 ServiceLoader 的适配，通过对 AbstractBasedServiceLoaderFactoryBean 的 createInstantce() 方法，结合 getObjectToExpose() 的具体实现来获取到 FactoryBean，具体又分为了ServiceFactoryBean 只返回一个 FactoryBean 以及 ServiceListFactoryBean 返回集合的 FactoryBean。依赖于AbstractServiceLoaderBasedFactoryBean 的 serviceType（指定的接口）来进行 SPI 的加载。
+
+第二种就是通过 ApplicationContext 中获取到的 AutowireCapableFactoryBean 的 createBean() 来创建 Bean 对象。
+
+第三种最常见也最常用，通过解析注解的方式来创建 Bean ：AnnotationConfigApplicationContext 对象的 register()。
+
+
+
+后面将会对如何初始化 开始展开议题。
