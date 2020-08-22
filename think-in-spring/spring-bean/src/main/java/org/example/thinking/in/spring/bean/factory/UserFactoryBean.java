@@ -1,4 +1,4 @@
-package org.example.thinking.in.spring.bean.definition.factory;
+package org.example.thinking.in.spring.bean.factory;
 
 import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
 import org.springframework.beans.factory.FactoryBean;

@@ -8,7 +8,7 @@
     <bean id="userFactoryByServiceLoader" class="org.springframework.beans.factory.serviceloader.ServiceLoaderFactoryBean">
 
         <!-- 告诉 AbstractServiceLoaderBasedFactoryBean serviceType ，serviceType 就是指具体的哪个接口 -->
-        <property name="serviceType" value="org.example.thinking.in.spring.bean.definition.factory.UserFactory" />
+        <property name="serviceType" value="org.example.thinking.in.spring.bean.factory.UserFactory" />
 
     </bean>
 

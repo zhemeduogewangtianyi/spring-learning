@@ -24,9 +24,9 @@
     <bean id="user-by-instantiation-method" factory-bean="userFactory" factory-method="createUser" />
 
     <!-- 抽象工厂方法创建 Bean 如果这里想不定义 Bean 的名称，就要保证抽象类 UserFactory 的子类有且只有一个，就是他。但是我就要多个。。。 -->
-    <bean id="userFactory" class="org.example.thinking.in.spring.bean.definition.factory.DefaultUserFactory" />
+    <bean id="userFactory" class="org.example.thinking.in.spring.bean.factory.DefaultUserFactory" />
 
     <!-- FactoryBean 创建 User Bean , UserFactoryBean 里面不是直接去定义一个User Bean ,而是去定义一个 BeanFactory，产生连接 -->
-    <bean id="user-by-factory-bean" class="org.example.thinking.in.spring.bean.definition.factory.UserFactoryBean" />
+    <bean id="user-by-factory-bean" class="org.example.thinking.in.spring.bean.factory.UserFactoryBean" />
 
 </beans>

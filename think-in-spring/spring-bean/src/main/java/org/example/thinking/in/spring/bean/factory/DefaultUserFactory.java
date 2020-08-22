@@ -1,4 +1,4 @@
-package org.example.thinking.in.spring.bean.definition.factory;
+package org.example.thinking.in.spring.bean.factory;
 
 /**
  * 默认 UserFactory 的实现 {@link UserFactory}

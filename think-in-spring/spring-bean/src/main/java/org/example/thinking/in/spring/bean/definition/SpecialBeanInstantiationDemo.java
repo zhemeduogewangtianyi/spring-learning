@@ -1,7 +1,7 @@
 package org.example.thinking.in.spring.bean.definition;
 
-import org.example.thinking.in.spring.bean.definition.factory.DefaultUserFactory;
-import org.example.thinking.in.spring.bean.definition.factory.UserFactory;
+import org.example.thinking.in.spring.bean.factory.DefaultUserFactory;
+import org.example.thinking.in.spring.bean.factory.UserFactory;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.context.ApplicationContext;
