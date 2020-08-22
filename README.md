@@ -3522,3 +3522,452 @@ public class SpecialBeanInstantiationDemo {
 
 
 后面将会对如何初始化 开始展开议题。
+
+
+
+
+
+
+
+## 5：初始化 Spring Bean ： Bean 初始化时的方法有哪些？
+
+
+
+#### Bean 初始化 （Initialization）
+
+
+
+##### 	· @PostConstruct 标注方法
+
+​			Java 的标准注解 ，在 Java 1.6 的时候引入的。
+
+##### 	· 实现 InitializingBean 接口的 afterPropertiesSet() 方法
+
+
+
+##### 	· 自定义初始化方法：
+
+##### 		· XML 配置：	 <bean init-method="init"  / >	
+
+##### 		· Java 注解：	 @Bean( initMethod="init" )
+
+##### 		· Java API：	 AbstractBeanDefinition#setInitMethodName( String );
+
+
+
+#### 问题：假设以上三种方式全部都在同一个 Bean 中定义，那么这些方法的执行顺序是怎么样的？
+
+
+
+#### 答：顺序是 @PostConstruct -> InitializationBean接口 -> @Bean 一系列的自定义初始化方法（XML、@Bean、Java API）
+
+
+
+##### 新增文件：
+
+##### 	BeanInitializationDemo.java
+
+##### 	bean-initialization-context.xml
+
+##### 改动文件：
+
+##### 	DefaultUserFactory.java
+
+
+
+
+
+##### BeanInitializationDemo.java
+
+```java
+package org.example.thinking.in.spring.bean.definition;
+
+import org.example.thinking.in.spring.bean.factory.DefaultUserFactory;
+import org.example.thinking.in.spring.bean.factory.UserFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+
+/**
+ * Bean 初始化 Demo
+ * @author WTY
+ * @date 2020/8/22 13:59
+ **/
+//@Configuration //Configuration Class，这里可以加也可以不加
+public class BeanInitializationDemo {
+
+    public static void main(String[] args) {
+
+        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
+
+        //注册 Configuration Class
+        applicationContext.register(BeanInitializationDemo.class);
+
+        //启动 Spring 应用上下文
+        applicationContext.refresh();
+
+        //依赖查找
+        UserFactory userFactory = applicationContext.getBean(UserFactory.class);
+
+//        System.out.println(userFactory.createUser());
+
+
+
+        //关闭 Spring 应用上下文
+        applicationContext.close();
+
+
+        System.err.println("\r\n 演示 XML 配置读取，初始化Bean \r\n");
+
+        //xml 方式实现
+        ClassPathXmlApplicationContext classPathXmlApplicationContext = new ClassPathXmlApplicationContext("classpath:/META-INF/bean-initialization-context.xml");
+        UserFactory bean = classPathXmlApplicationContext.getBean(UserFactory.class);
+
+        classPathXmlApplicationContext.refresh();
+        classPathXmlApplicationContext.close();
+
+    }
+
+    @Bean(initMethod = "initDefaultUserFactory")
+    public UserFactory userFactory(){
+        return new DefaultUserFactory();
+    }
+
+}
+
+```
+
+
+
+##### bean-initialization-context.xml
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <bean id="initialization-user-factory" class="org.example.thinking.in.spring.bean.factory.DefaultUserFactory" init-method="xmlInitDefaultUserFactory" />
+
+
+</beans>
+```
+
+
+
+##### DefaultUserFactory.java
+
+```java
+package org.example.thinking.in.spring.bean.factory;
+
+import org.springframework.beans.factory.InitializingBean;
+
+import javax.annotation.PostConstruct;
+
+/**
+ * 默认 UserFactory 的实现 {@link UserFactory}
+ * @author WTY
+ * @date 2020/8/20 0:11
+ **/
+public class DefaultUserFactory implements UserFactory, InitializingBean {
+
+    // Spring Bean 初始化章节增加
+    @PostConstruct
+    public void init(){
+        System.out.println("--------  @PostConstruct  DefaultUserFactory 初始化  ----------");
+    }
+
+
+    public void initDefaultUserFactory(){
+        System.out.println("--------  @Bean 自定义初始化方法：  DefaultUserFactory#initDefaultUserFactory() 初始化  ----------");
+    }
+
+    public void xmlInitDefaultUserFactory(){
+        System.out.println("--------  XML 自定义初始化方法：  InitializingBean#afterPropertiesSet() 初始化  ----------");
+    }
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        System.out.println("--------  InitializingBean 初始化方法：  InitializingBean#afterPropertiesSet() 初始化  ----------");
+    }
+
+
+}
+
+```
+
+
+
+##### Java API 来定义Spring Bean 的初始化 ->  AbstractBeanDefinition.java
+
+
+
+```java
+	/**
+		这个方法在后面的 Spring 5.1 里面重构了，提到了 BeanDefinition 里面了，但是一定要记住这个实现，这个从 Spring 1.0 就开始有了。
+	 * Set the name of the initializer method.
+	 * <p>The default is {@code null} in which case there is no initializer method.
+	 */
+	@Override
+	public void setInitMethodName(@Nullable String initMethodName) {
+		this.initMethodName = initMethodName;
+	}
+```
+
+
+
+##### 重构的 BeanDefinition.java
+
+```java
+/**
+	 * Set the name of the initializer method.
+	 * @since 5.1
+	 */
+	void setInitMethodName(@Nullable String initMethodName);
+```
+
+
+
+这里就是说当你看到这里。。。准备去用学来的 setInitMethodName 初始化的时候，请切记。。看版本
+
+
+
+可以打个条件断点，看一下 自定义的 @Bean( initMethod="initDefaultUserFactory" ) 会不会走到 AbstractBeanDefinition#setInitMethodName() 里面来。
+
+
+
+### 总结：
+
+​	通过案例分别演示了 @PostConstruct、InitializingBean接口，自定义初始化方法（@Bean、XML、AbstractBeanDefinition#initMethodName()）这三种
+
+Spring Bean 初始化的方法。他的执行顺序是有规律的 @PostConstrct 最先执行，其次是 InitializingBean 接口，最后是自定义的初始化方法（@Bean、XML
+
+、AbstractBeanDefinition#initMethodName(String initMethodName)）。记住这个可以更好的初始化 Bean，并且可以防止初始化的时候依赖倒转问题。
+
+
+
+
+
+## 6：延迟初始化 Spring Bean ：延迟初始化 Spring Bean 初始化 Bean 会影响依赖注入吗？
+
+这个在 Bean 的生命周期中是比较重要的。设计模式中也有一种延迟加载的模式，和这个差不多。
+
+
+
+##### Bean 的延迟初始化（Lazy Initialization）
+
+##### 	· XML 配置： <bean lazy-init="true" / >
+
+##### 	· Java 注解：@Lazy(true)
+
+
+
+##### 问题：当某个 Bean 定义为延迟初始化，那么，Spring 容器返回的对象与非延迟的对象存在什么样的差异？
+
+
+
+##### 答：以 AnnotationConfigApplicationContext 为例，非延迟加载：会在 AnnotationConfigApplicationContext 调用 refresh() 方法的时候，进行
+
+##### Bean 的初始化操作，如果把 Bean 标记为 lazy （懒加载），那么 Bean 在 AnnotationConfigApplicationContext 调用 refresh 方法的时候，不去
+
+##### 进行初始化加载，一直到我们进行依赖查找的时候才会去初始化 Bean 。例如：AnnotationConfigApplicationContext 调用 getBean() 方法的时候去
+
+##### 加载 Bean。
+
+
+
+##### 问题：延迟加载和非延迟加载的实现有什么不同？
+
+##### 答：以 AnnotationConfigApplicationContext 为例，首先看到 refresh() 这个方法。
+
+```java
+@Override
+	public void refresh() throws BeansException, IllegalStateException {
+		synchronized (this.startupShutdownMonitor) {
+			// Prepare this context for refreshing.
+			prepareRefresh();
+
+			// Tell the subclass to refresh the internal bean factory.
+			ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
+
+			// Prepare the bean factory for use in this context.
+			prepareBeanFactory(beanFactory);
+
+			try {
+				// Allows post-processing of the bean factory in context subclasses.
+				postProcessBeanFactory(beanFactory);
+
+				// Invoke factory processors registered as beans in the context.
+				invokeBeanFactoryPostProcessors(beanFactory);
+
+				// Register bean processors that intercept bean creation.
+				registerBeanPostProcessors(beanFactory);
+
+				// Initialize message source for this context.
+				initMessageSource();
+
+				// Initialize event multicaster for this context.
+				initApplicationEventMulticaster();
+
+				// Initialize other special beans in specific context subclasses.
+				onRefresh();
+
+				// Check for listener beans and register them.
+				registerListeners();
+
+                //在这个地方会说明，只会初始化非懒加载的 单例Bean.
+				// Instantiate all remaining (non-lazy-init) singletons.
+				finishBeanFactoryInitialization(beanFactory);
+
+				// Last step: publish corresponding event.
+				finishRefresh();
+			}
+
+			catch (BeansException ex) {
+				if (logger.isWarnEnabled()) {
+					logger.warn("Exception encountered during context initialization - " +
+							"cancelling refresh attempt: " + ex);
+				}
+
+				// Destroy already created singletons to avoid dangling resources.
+				destroyBeans();
+
+				// Reset 'active' flag.
+				cancelRefresh(ex);
+
+				// Propagate exception to caller.
+				throw ex;
+			}
+
+			finally {
+				// Reset common introspection caches in Spring's core, since we
+				// might not ever need metadata for singleton beans anymore...
+				resetCommonCaches();
+			}
+		}
+	}
+```
+
+
+
+##### // Instantiate all remaining (non-lazy-init) singletons.
+
+##### finishBeanFactoryInitialization(beanFactory); 
+
+这个方法就是说会初始化所有非懒加载的单例 Bean
+
+
+
+```java
+/**
+	 * Finish the initialization of this context's bean factory,
+	 * initializing all remaining singleton beans.
+	 */
+	protected void finishBeanFactoryInitialization(ConfigurableListableBeanFactory beanFactory) {
+		// Initialize conversion service for this context.
+		if (beanFactory.containsBean(CONVERSION_SERVICE_BEAN_NAME) &&
+				beanFactory.isTypeMatch(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class)) {
+			beanFactory.setConversionService(
+					beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class));
+		}
+
+		// Register a default embedded value resolver if no bean post-processor
+		// (such as a PropertyPlaceholderConfigurer bean) registered any before:
+		// at this point, primarily for resolution in annotation attribute values.
+		if (!beanFactory.hasEmbeddedValueResolver()) {
+			beanFactory.addEmbeddedValueResolver(strVal -> getEnvironment().resolvePlaceholders(strVal));
+		}
+
+		// Initialize LoadTimeWeaverAware beans early to allow for registering their transformers early.
+		String[] weaverAwareNames = beanFactory.getBeanNamesForType(LoadTimeWeaverAware.class, false, false);
+		for (String weaverAwareName : weaverAwareNames) {
+			getBean(weaverAwareName);
+		}
+
+		// Stop using the temporary ClassLoader for type matching.
+		beanFactory.setTempClassLoader(null);
+
+		// Allow for caching all bean definition metadata, not expecting further changes.
+		beanFactory.freezeConfiguration();
+
+        //普通的 Bean 在这里初始化，这里就是 Spring 初始化 Bean 的前置动作。
+		// Instantiate all remaining (non-lazy-init) singletons.
+		beanFactory.preInstantiateSingletons();
+	}
+```
+
+
+
+##### beanFactory.preInstantiateSingletions() 这个方法里面有个判断逻辑，这个方法是 ConfigurableListBeanFactory 中的 preInstantiateSingletions() 方法，并且在 DefaultListableBeanFactory 这个子类中给了具体的实现。
+
+
+
+```java
+@Override
+	public void preInstantiateSingletons() throws BeansException {
+		if (logger.isTraceEnabled()) {
+			logger.trace("Pre-instantiating singletons in " + this);
+		}
+
+		// Iterate over a copy to allow for init methods which in turn register new bean definitions.
+		// While this may not be part of the regular factory bootstrap, it does otherwise work fine.
+		List<String> beanNames = new ArrayList<>(this.beanDefinitionNames);
+
+		// Trigger initialization of all non-lazy singleton beans...
+		for (String beanName : beanNames) {
+			RootBeanDefinition bd = getMergedLocalBeanDefinition(beanName);
+            //这里就是判断 BeanDefinition 不是抽象类 并且不是单例的，不是懒加载的 才会走这里的方式去初始化 Bean
+			if (!bd.isAbstract() && bd.isSingleton() && !bd.isLazyInit()) {
+				if (isFactoryBean(beanName)) {
+					Object bean = getBean(FACTORY_BEAN_PREFIX + beanName);
+					if (bean instanceof FactoryBean) {
+						final FactoryBean<?> factory = (FactoryBean<?>) bean;
+						boolean isEagerInit;
+						if (System.getSecurityManager() != null && factory instanceof SmartFactoryBean) {
+							isEagerInit = AccessController.doPrivileged((PrivilegedAction<Boolean>)
+											((SmartFactoryBean<?>) factory)::isEagerInit,
+									getAccessControlContext());
+						}
+						else {
+							isEagerInit = (factory instanceof SmartFactoryBean &&
+									((SmartFactoryBean<?>) factory).isEagerInit());
+						}
+						if (isEagerInit) {
+							getBean(beanName);
+						}
+					}
+				}
+				else {
+					getBean(beanName);
+				}
+			}
+		}
+
+		// Trigger post-initialization callback for all applicable beans...
+		for (String beanName : beanNames) {
+			Object singletonInstance = getSingleton(beanName);
+			if (singletonInstance instanceof SmartInitializingSingleton) {
+				final SmartInitializingSingleton smartSingleton = (SmartInitializingSingleton) singletonInstance;
+				if (System.getSecurityManager() != null) {
+					AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
+						smartSingleton.afterSingletonsInstantiated();
+						return null;
+					}, getAccessControlContext());
+				}
+				else {
+					smartSingleton.afterSingletonsInstantiated();
+				}
+			}
+		}
+	}
+```
+
+
+
+
+
+### 总结：
+
+​	延迟初始化和非延迟初始化的区别在于，它们在应用上下文生命周期之前或者之后来进行输出。
