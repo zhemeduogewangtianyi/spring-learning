@@ -28,6 +28,7 @@ public class SpecialBeanInstantiationDemo {
         // SPI ServiceLoader 调用演示
         serviceLoaderDemo();
 
+        //通过 xml 配置的 ServiceLoadFactory 指定 serviceType 加载 META-INF/services 下配置的的 UserFactory 的子类
         ServiceLoader<UserFactory> userFactoryByServiceLoader = beanFactory.getBean("userFactoryByServiceLoader", ServiceLoader.class);
 
         //通过 Spring 实例化 ServiceLoader 来获取 UserFactory
