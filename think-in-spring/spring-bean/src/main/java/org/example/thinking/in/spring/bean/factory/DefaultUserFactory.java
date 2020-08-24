@@ -5,7 +5,6 @@ import org.springframework.beans.factory.InitializingBean;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import javax.security.auth.Destroyable;
 
 /**
  * 默认 UserFactory 的实现 {@link UserFactory}
@@ -53,5 +52,11 @@ public class DefaultUserFactory implements UserFactory, InitializingBean, Dispos
 
     public void destroyWithXml(){
         System.err.println("--------  XML  DefaultUserFactory 销毁  ----------");
+    }
+
+    /** 覆盖 Object 的 finalize()  */
+    @Override
+    protected void finalize() throws Throwable {
+        System.out.println("当前的 DefaultUserFactory 对象正在被回收！！！");
     }
 }

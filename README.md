@@ -2994,7 +2994,38 @@ public class BeanInstantiationDemo {
 **bean-instantiation-context.xml 代码如下：**
 
 ```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        https://www.springframework.org/schema/beans/spring-beans.xsd">
 
+    <!-- 有参构造 创建 Bean -->
+    <bean id="constructor-user-arg" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User">
+        <constructor-arg name="id" value="2" />
+        <constructor-arg name="name" value="constructor-user" />
+    </bean>
+
+    <!-- 空参构造 创建 Bean -->
+    <bean id="constructor-user-no-arg" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User" />
+
+    <!-- 通过 静态方法创建 bean -->
+    <bean id="user-by-static-method" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User" factory-method="createUser" >
+        <!-- setter 方法赋值 -->
+        <property name="id" value="19" />
+        <property name="name" value="小周" />
+    </bean>
+
+    <!-- 实例（Bean）方法创建 Bean -->
+    <bean id="user-by-instantiation-method" factory-bean="userFactory" factory-method="createUser" />
+
+    <!-- 抽象工厂方法创建 Bean 如果这里想不定义 Bean 的名称，就要保证抽象类 UserFactory 的子类有且只有一个，就是他。但是我就要多个。。。 -->
+    <bean id="userFactory" class="org.example.thinking.in.spring.bean.factory.DefaultUserFactory" />
+
+    <!-- FactoryBean 创建 User Bean , UserFactoryBean 里面不是直接去定义一个User Bean ,而是去定义一个 BeanFactory，产生连接 -->
+    <bean id="user-by-factory-bean" class="org.example.thinking.in.spring.bean.factory.UserFactoryBean" />
+
+</beans>
 ```
 
 
@@ -3752,6 +3783,8 @@ Spring Bean 初始化的方法。他的执行顺序是有规律的 @PostConstrct
 
 ## 6：延迟初始化 Spring Bean ：延迟初始化 Spring Bean 初始化 Bean 会影响依赖注入吗？
 
+
+
 这个在 Bean 的生命周期中是比较重要的。设计模式中也有一种延迟加载的模式，和这个差不多。
 
 
@@ -3971,3 +4004,1230 @@ Spring Bean 初始化的方法。他的执行顺序是有规律的 @PostConstrct
 ### 总结：
 
 ​	延迟初始化和非延迟初始化的区别在于，它们在应用上下文生命周期之前或者之后来进行输出。
+
+
+
+
+
+
+
+## 7：销毁 Spring Bean ：销毁 Bean 的基本操作有哪些？
+
+
+
+### Bean 销毁（Destroy）
+
+
+
+##### 	· @PreDestroy 标注方法：
+
+​			Java 标准注解，字面意思：销毁之前进行操作。
+
+​			这里的销毁和我们这里的销毁有点冲突的地方，这里说的销毁是 Bean 对象被销毁，就是说 Bean 对象在被回收之前（回收是指的 Java GC 的回收），
+
+​			才会被销毁掉。
+
+##### 	· 实现 DisposableBean 接口的 destroy() 方法：
+
+
+
+##### 	· 自定义销毁方法：
+
+##### 		· XML 配置：<bean destroy="destroy" / >
+
+##### 		· Java 注解：@Bean(destroy="destroy")
+
+##### 		· Java API ：AbstractBeanDefinition#setDestroyMethodName( String )
+
+
+
+##### 问题：假设以上三种方式在同一 Bean 里面定义，那么这些方法的执行顺序是怎样的？
+
+##### 答： 和 Spring 初始化方法的规则一致，只不过名称不同罢了。 @PreDestroy  ->  DisposableBean -> 自定义销毁方法（@Bean、XML、
+
+##### AbstractBeanDefinition#setDestroyMethodName(String)）。真正的关闭是在 AbsratctApplicationContext的 close() 方法来实现的。
+
+
+
+##### close()
+
+```java
+@Override
+	public void close() {
+		synchronized (this.startupShutdownMonitor) {
+            //销毁的方法
+			doClose();
+			// If we registered a JVM shutdown hook, we don't need it anymore now:
+			// We've already explicitly closed the context.
+			if (this.shutdownHook != null) {
+				try {
+					Runtime.getRuntime().removeShutdownHook(this.shutdownHook);
+				}
+				catch (IllegalStateException ex) {
+					// ignore - VM is already shutting down
+				}
+			}
+		}
+	}
+```
+
+
+
+##### doClose()
+
+```java
+/**
+	 * Actually performs context closing: publishes a ContextClosedEvent and
+	 * destroys the singletons in the bean factory of this application context.
+	 * <p>Called by both {@code close()} and a JVM shutdown hook, if any.
+	 * @see org.springframework.context.event.ContextClosedEvent
+	 * @see #destroyBeans()
+	 * @see #close()
+	 * @see #registerShutdownHook()
+	 */
+	protected void doClose() {
+		// Check whether an actual close attempt is necessary...
+		if (this.active.get() && this.closed.compareAndSet(false, true)) {
+			if (logger.isDebugEnabled()) {
+				logger.debug("Closing " + this);
+			}
+
+			LiveBeansView.unregisterApplicationContext(this);
+
+			try {
+				// Publish shutdown event.
+				publishEvent(new ContextClosedEvent(this));
+			}
+			catch (Throwable ex) {
+				logger.warn("Exception thrown from ApplicationListener handling ContextClosedEvent", ex);
+			}
+
+			// Stop all Lifecycle beans, to avoid delays during individual destruction.
+			if (this.lifecycleProcessor != null) {
+				try {
+					this.lifecycleProcessor.onClose();
+				}
+				catch (Throwable ex) {
+					logger.warn("Exception thrown from LifecycleProcessor on context close", ex);
+				}
+			}
+
+            //这个方法销毁所有的缓存单例的上下文中的 BeanFactory
+			// Destroy all cached singletons in the context's BeanFactory.
+			destroyBeans();
+
+            //这里是关闭上下文本身的状态
+			// Close the state of this context itself.
+			closeBeanFactory();
+
+			// Let subclasses do some final clean-up if they wish...
+			onClose();
+
+			// Reset local application listeners to pre-refresh state.
+			if (this.earlyApplicationListeners != null) {
+				this.applicationListeners.clear();
+				this.applicationListeners.addAll(this.earlyApplicationListeners);
+			}
+
+			// Switch to inactive.
+			this.active.set(false);
+		}
+	}
+```
+
+
+
+##### destoryBeans()
+
+```java
+	protected void destroyBeans() {
+		getBeanFactory().destroySingletons();
+	}
+```
+
+获取到 BeanFactory，然后去销毁
+
+
+
+##### destroySingletions() 这个方法在 ConfigurableBeanFactory 接口里面，有两个实现类，我们可以看一下 DefaultListableBeanFactory 里面怎么做的。
+
+```java
+/**
+	 * Destroy all singleton beans in this factory, including inner beans that have
+	 * been registered as disposable. To be called on shutdown of a factory.
+	 * <p>Any exception that arises during destruction should be caught
+	 * and logged instead of propagated to the caller of this method.
+	 */
+	void destroySingletons();
+```
+
+
+
+##### DefaultListableBeanFactory # destroySingletons();
+
+```java
+@Override
+	public void destroySingletons() {
+		super.destroySingletons();
+		updateManualSingletonNames(Set::clear, set -> !set.isEmpty());
+		clearByTypeCache();
+	}
+```
+
+这里的 **super.destroySingletons()** 方法是继承了 **DefaultSingletonBeanRegistry** 这个类，这个类也是 **ConfigurableBeanFactory** 类的实现类。无奈，只好
+
+看一下 **DefaultSingletonBeanRegistry** 这个类的 **destroySingletons()** 怎么实现的。
+
+
+
+##### DefaultSingletonBeanRegisty # destroySingletons();
+
+```java
+public void destroySingletons() {
+		if (logger.isTraceEnabled()) {
+			logger.trace("Destroying singletons in " + this);
+		}
+    	//加锁。。估计有人多线程调用过这里。锁住单例的对象们
+		synchronized (this.singletonObjects) {
+            //这是个标识，指示我们当前是否在destroySingletons中的标志。
+			this.singletonsCurrentlyInDestruction = true;
+		}
+
+	    //要关闭的 BeanName 都在这里面
+		String[] disposableBeanNames;
+    	//加锁。。锁住要关闭的 Bean 对象们
+		synchronized (this.disposableBeans) {
+            //把要关闭的对象 Map 的 key 拿出来，弄成一个数组
+            //其实就是统计有多少个 Bean 对象实现了 disposableBean 这个接口。
+			disposableBeanNames = StringUtils.toStringArray(this.disposableBeans.keySet());
+		}
+	    // 循环数组去关闭
+		for (int i = disposableBeanNames.length - 1; i >= 0; i--) {
+			destroySingleton(disposableBeanNames[i]);
+		}
+
+	    //一大堆的清空 map
+		this.containedBeanMap.clear();
+		this.dependentBeanMap.clear();
+		this.dependenciesForBeanMap.clear();
+
+	    //把单例的缓存清除掉
+		clearSingletonCache();
+	}
+```
+
+
+
+##### destroySingletion();
+
+```java
+/**
+	 * Destroy the given bean. Delegates to {@code destroyBean}
+	 * if a corresponding disposable bean instance is found.
+	 * @param beanName the name of the bean
+	 * @see #destroyBean
+	 */
+	public void destroySingleton(String beanName) {
+		// Remove a registered singleton of the given name, if any.
+		removeSingleton(beanName);
+
+		// Destroy the corresponding DisposableBean instance.
+		DisposableBean disposableBean;
+        //锁住要清除的 Bean
+		synchronized (this.disposableBeans) {
+            //从清除的 Map 中删除对象
+            //这里为什么敢放心大胆的强转？因为上面只把实现了 DisposableBean 接口的 beanName 装进了数组
+			disposableBean = (DisposableBean) this.disposableBeans.remove(beanName);
+		}
+        //销毁 Bean
+		destroyBean(beanName, disposableBean);
+	}
+```
+
+
+
+##### destroyBean()
+
+```java
+/**
+	 * Destroy the given bean. Must destroy beans that depend on the given
+	 * bean before the bean itself. Should not throw any exceptions.
+	 * @param beanName the name of the bean
+	 * @param bean the bean instance to destroy
+	 */
+	protected void destroyBean(String beanName, @Nullable DisposableBean bean) {
+        //先触发销毁 Bean 的依赖
+		// Trigger destruction of dependent beans first...
+		Set<String> dependencies;
+		synchronized (this.dependentBeanMap) {
+			//在完全同步内以确保断开连接集，就是删除依赖的 Bean
+            // Within full synchronization in order to guarantee a disconnected Set
+			dependencies = this.dependentBeanMap.remove(beanName);
+		}
+        //有删除的 依赖 Bean，递归到这里为空就停了。。
+		if (dependencies != null) {
+			if (logger.isTraceEnabled()) {
+				logger.trace("Retrieved dependent beans for bean '" + beanName + "': " + dependencies);
+			}
+			for (String dependentBeanName : dependencies) {
+                // 销毁单示例对象，这块是个递归。。
+				destroySingleton(dependentBeanName);
+			}
+		}
+        // Actually destroy the bean now...
+		if (bean != null) {
+			try {
+                //在这里调用刀片 DisposableBean 接口的 destroy 方法
+				bean.destroy();
+			}
+			catch (Throwable ex) {
+				if (logger.isWarnEnabled()) {
+					logger.warn("Destruction of bean with name '" + beanName + "' threw an exception", ex);
+				}
+			}
+		}
+
+		// Trigger destruction of contained beans...
+		Set<String> containedBeans;
+		synchronized (this.containedBeanMap) {
+			// Within full synchronization in order to guarantee a disconnected Set
+			containedBeans = this.containedBeanMap.remove(beanName);
+		}
+		if (containedBeans != null) {
+			for (String containedBeanName : containedBeans) {
+				destroySingleton(containedBeanName);
+			}
+		}
+
+		// Remove destroyed bean from other beans' dependencies.
+		synchronized (this.dependentBeanMap) {
+			for (Iterator<Map.Entry<String, Set<String>>> it = this.dependentBeanMap.entrySet().iterator(); it.hasNext();) {
+				Map.Entry<String, Set<String>> entry = it.next();
+				Set<String> dependenciesToClean = entry.getValue();
+				dependenciesToClean.remove(beanName);
+				if (dependenciesToClean.isEmpty()) {
+					it.remove();
+				}
+			}
+		}
+
+		// Remove destroyed bean's prepared dependency information.
+		this.dependenciesForBeanMap.remove(beanName);
+	}
+```
+
+
+
+##### detroySingletion()
+
+```java
+/**
+	 * Destroy the given bean. Delegates to {@code destroyBean}
+	 * if a corresponding disposable bean instance is found.
+	 * @param beanName the name of the bean
+	 * @see #destroyBean
+	 */
+	public void destroySingleton(String beanName) {
+		// Remove a registered singleton of the given name, if any.
+		removeSingleton(beanName);
+
+		// Destroy the corresponding DisposableBean instance.
+		DisposableBean disposableBean;
+		synchronized (this.disposableBeans) {
+            //删除bean ，就是 map 里面根据 key 删 value。这里删除的 依赖的对象Map
+			disposableBean = (DisposableBean) this.disposableBeans.remove(beanName);
+		}
+        //递归上面那个方法
+		destroyBean(beanName, disposableBean);
+	}
+```
+
+
+
+
+
+那么问题来了。。。这里只说实现了 DisposableBean 接口在哪触发的 Bean 的销毁方法。那么 @PreDestroy 注解标注的类在哪里触发的 Bean 的销毁方法？
+
+
+
+##### @PreDestroy
+
+```java
+@Documented
+@Retention (RUNTIME)
+@Target(METHOD)
+public @interface PreDestroy {
+}
+
+```
+
+
+
+找个这个注解，通过 IDEA 的 find Usages ，找到 spring-context 使用 @PreDestroy 的地方 - **CommonAnnotationBeanPostProcessor**
+
+```java
+/**
+	 * Create a new CommonAnnotationBeanPostProcessor,
+	 * with the init and destroy annotation types set to
+	 * {@link javax.annotation.PostConstruct} and {@link javax.annotation.PreDestroy},
+	 * respectively.
+	 */
+	public CommonAnnotationBeanPostProcessor() {
+		setOrder(Ordered.LOWEST_PRECEDENCE - 3);
+		setInitAnnotationType(PostConstruct.class);
+        //这里用到的。但是看了下好像是 set 一下。
+		setDestroyAnnotationType(PreDestroy.class);
+		ignoreResourceType("javax.xml.ws.WebServiceContext");
+	}
+```
+
+
+
+##### setDestroyAnnotationType(PreDestroy.class);
+
+org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor#setDestroyAnnotationType
+
+```java
+	public void setDestroyAnnotationType(Class<? extends Annotation> destroyAnnotationType) {
+		this.destroyAnnotationType = destroyAnnotationType;
+	}
+```
+
+
+
+这个 **destroyAnnotationType**  用到的地方
+
+org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor#buildLifecycleMetadata
+
+```java
+private LifecycleMetadata buildLifecycleMetadata(final Class<?> clazz) {
+		if (!AnnotationUtils.isCandidateClass(clazz, Arrays.asList(this.initAnnotationType, this.destroyAnnotationType))) {
+			return this.emptyLifecycleMetadata;
+		}
+
+		List<LifecycleElement> initMethods = new ArrayList<>();
+		List<LifecycleElement> destroyMethods = new ArrayList<>();
+		Class<?> targetClass = clazz;
+
+		do {
+			final List<LifecycleElement> currInitMethods = new ArrayList<>();
+			final List<LifecycleElement> currDestroyMethods = new ArrayList<>();
+
+            // targetClass 指的是当前 Bean 的 class 的类型
+            //ReflectionUtils.doWithLocalMethods() 这个方法是 spring 提供的一个工具类，作用是把给到的类里面的所有方法都找到。很吊。
+			ReflectionUtils.doWithLocalMethods(targetClass, method -> {
+                //这个是初始化标记，比如 @PostConstruct
+				if (this.initAnnotationType != null && method.isAnnotationPresent(this.initAnnotationType)) {
+					LifecycleElement element = new LifecycleElement(method);
+					currInitMethods.add(element);
+					if (logger.isTraceEnabled()) {
+						logger.trace("Found init method on class [" + clazz.getName() + "]: " + method);
+					}
+				}
+                //找到了目标类下的方法，假如标注了 destroyAnnotationType 这个东西，比如 @PreDestroy
+				if (this.destroyAnnotationType != null && method.isAnnotationPresent(this.destroyAnnotationType)) {
+					//添加销毁方法到 currDestroyMethod
+                    currDestroyMethods.add(new LifecycleElement(method));
+					if (logger.isTraceEnabled()) {
+						logger.trace("Found destroy method on class [" + clazz.getName() + "]: " + method);
+					}
+				}
+			});
+
+			initMethods.addAll(0, currInitMethods);
+            //加入到集合里面，为了给 DefaultListableBeanFactory 的 destroySingletons() 方法执行的时候用。。。
+			destroyMethods.addAll(currDestroyMethods);
+			targetClass = targetClass.getSuperclass();
+		}
+		while (targetClass != null && targetClass != Object.class);
+
+		return (initMethods.isEmpty() && destroyMethods.isEmpty() ? this.emptyLifecycleMetadata :
+				new LifecycleMetadata(clazz, initMethods, destroyMethods));
+	}
+```
+
+
+
+
+
+### 总结：
+
+​	通过销毁的三种方式 @PreDestroy、DisposableBean、自定义销毁方法 + 初始化方法的对比，我们可以了解到这三种实现方式怎么来操作，不会的时候可以拿来参照。可以发现 Java 注解的方式优先级最高，Spring 里面的 DisposableBean 接口是老二的，自定义的方式放在第三位。
+
+
+
+
+
+### 8：回收 Spring Bean ：Spring IOC 容器管理的 Bean 可以被 GC 回收吗？
+
+
+
+##### 	· Bean 的垃圾回收（GC）
+
+
+
+##### 	1. 关闭 Spring 容器（应用上下文）
+
+
+
+##### 	2. 执行 GC（Garbage Collection）
+
+
+
+##### 	3. Spring Bean 覆盖 Object 类的 finalize() 方法被回调
+
+​		因为垃圾回收的时候 finalize() 方法会被回调
+
+
+
+##### 新增文件：
+
+##### 	BeanGarbageCollectionDemo.java
+
+##### 	DefaultUserFactory.java	覆盖了 Object 类的 finalize() 方法
+
+
+
+##### BeanGarbageCollectionDemo.java
+
+```java
+package org.example.thinking.in.spring.bean.definition;
+
+import org.example.thinking.in.spring.bean.factory.UserFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+
+/**
+ * Bean 垃圾回收
+ * @author WTY
+ * @date 2020/8/24 23:26
+ **/
+public class BeanGarbageCollectionDemo {
+
+    public static void main(String[] args) {
+
+        //创建 BeanFactory 容器
+        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
+
+        //注册 Bean Configuration Class
+        applicationContext.register(BeanInitializationDemo.class);
+
+        //启动 Spring IOC 容器上下文
+        applicationContext.refresh();
+
+        //关闭 Spring IOC 容器上下文
+        applicationContext.close();
+
+        //强制执行 GC   加入你在 JVM 的参数中关闭了 full gc，这里是没用的。。。
+        System.gc();
+
+    }
+
+}
+
+```
+
+
+
+##### DefaultUserFactory.java
+
+```java
+package org.example.thinking.in.spring.bean.factory;
+
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.InitializingBean;
+
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+
+/**
+ * 默认 UserFactory 的实现 {@link UserFactory}
+ * @author WTY
+ * @date 2020/8/20 0:11
+ **/
+public class DefaultUserFactory implements UserFactory, InitializingBean, DisposableBean {
+
+    // Spring Bean 初始化章节增加
+    @PostConstruct
+    public void init(){
+        System.out.println("--------  @PostConstruct  DefaultUserFactory 初始化  ----------");
+    }
+
+
+    public void initDefaultUserFactory(){
+        System.out.println("--------  @Bean 自定义初始化方法：  DefaultUserFactory#initDefaultUserFactory() 初始化  ----------");
+    }
+
+    public void xmlInitDefaultUserFactory(){
+        System.out.println("--------  XML 自定义初始化方法：  InitializingBean#afterPropertiesSet() 初始化  ----------");
+    }
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        System.out.println("--------  InitializingBean 初始化方法：  InitializingBean#afterPropertiesSet() 初始化  ----------");
+    }
+
+
+    //Spring Bean 销毁章节增加
+    @PreDestroy
+    public void preDestroy(){
+        System.err.println("--------  @PreDestroy  DefaultUserFactory 销毁  ----------");
+    }
+
+
+    @Override
+    public void destroy() throws Exception {
+        System.err.println("--------  DisposableBean  DefaultUserFactory 销毁  ----------");
+    }
+
+    public void destroyWithBean(){
+        System.err.println("--------  @Bean  DefaultUserFactory 销毁  ----------");
+    }
+
+    public void destroyWithXml(){
+        System.err.println("--------  XML  DefaultUserFactory 销毁  ----------");
+    }
+
+    /** 覆盖 Object 的 finalize()  */
+    @Override
+    protected void finalize() throws Throwable {
+        System.out.println("当前的 DefaultUserFactory 对象正在被回收！！！");
+    }
+}
+
+```
+
+
+
+### 总结：
+
+​	我们发现 Spring 中的 Bean 其实是可以被 JVM 的 垃圾回收期 GC（Garbage Collection）回收的。先决条件是要把 Spring 的上下文通过 Spring 容器来关闭。
+
+第二个是需要使用 System.gc() 来强制执行 gc（不是必须）。第三个是可能有的版本会等待一些时间。。
+
+
+
+
+
+
+
+## 8：Spring Bean 的基础面试题
+
+
+
+#### 沙雕面试题：
+
+
+
+##### 	如何注册一个 Spring Bean ？
+
+​	答：通过 BeanDefinition 和外部单体来注册。
+
+BeanDefinitionRegisty 的 API 来进行注册，比如 **AnnotationBeanDefinitionRegisterDemo.java** 这个类里面举例的 AnnotationConfigApplicationContext 就是一个 BeanDefinitionRegisty 。
+
+
+
+### 外部单体注册：
+
+​	外部单体就是说这个 Bean 的生命周期不由 Spring 容器来管理，但是可以被他托管。
+
+
+
+##### 新增文件：
+
+##### 	SingletonBeanRegistrationDemo.java	单体外部 Bean 注册示例
+
+
+
+##### SingletonBeanRegistrationDemo.java
+
+```java
+package org.example.thinking.in.spring.bean.definition;
+
+import org.example.thinking.in.spring.bean.factory.DefaultUserFactory;
+import org.example.thinking.in.spring.bean.factory.UserFactory;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+
+/**
+ * 单体外部 Bean 注册示例
+ * @author WTY
+ * @date 2020/8/25 0:42
+ **/
+public class SingletonBeanRegistrationDemo {
+
+    public static void main(String[] args) {
+
+        //创建 BeanFactory 对象
+        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
+
+        //创建外部对象
+        UserFactory userFactory = new DefaultUserFactory();
+
+        //获取到上下文中的 BeanFactory
+        ConfigurableListableBeanFactory configurableListableBeanFactory = applicationContext.getBeanFactory();
+
+        // 注册 外部单例对象
+        configurableListableBeanFactory.registerSingleton("userFactory",userFactory);
+
+        //启动 Spring 容器上下文
+        applicationContext.refresh();
+
+        //通过依赖查找的方式获取到注册进 Spring IoC 容器的 UserFactory 对象
+        UserFactory iocUserFactory = applicationContext.getBean("userFactory", UserFactory.class);
+
+        //验证我们创建的外部对象 和 注册进 Spring IoC 容器的外部对象是不是同一个
+        System.out.println("userFactory == userFactoryByLookup" + (userFactory == iocUserFactory));
+
+        //如果没有找到就会抛出 NoSuchBeanDefinitionException
+        UserFactory noSuchBeanDefinitionException = applicationContext.getBean("userFactory1111", UserFactory.class);
+
+        //关闭 Spring 容器上下文
+        applicationContext.close();
+
+        //如果上下文关闭了会抛出 IllegalStateException
+        UserFactory IllegalStateException = applicationContext.getBean("userFactory", UserFactory.class);
+
+    }
+
+}
+
+```
+
+
+
+ConfigurableListableBeanFactory 是一个综合接口，registerSingleton(String name,Object obj); 这个方法其实是 **SingletonBeanRegistry** 的规范定义。
+
+```java
+package org.springframework.beans.factory.config;
+
+import org.springframework.lang.Nullable;
+
+public interface SingletonBeanRegistry {
+
+	//在这里，这个东西可以注册 Bean 进入 BeanDefinitionRegisty 里面，委派 AnnotationConfigApplicationContext 的 getBean()
+    //来找到 BeanDefinitionRegisty 进而获取到注册到 BeanFactory 中的 Bean 对象
+	void registerSingleton(String beanName, Object singletonObject);
+
+	
+	@Nullable
+	Object getSingleton(String beanName);
+
+	
+	boolean containsSingleton(String beanName);
+
+	
+	String[] getSingletonNames();
+
+	
+	Object getSingletonMutex();
+
+}
+
+```
+
+
+
+
+
+### 996面试题：什么是 Spring BeanDefinition ？
+
+​	答：回顾 定义 Spring Bean 和 BeanDefinition 元信息那块的内容
+
+
+
+### BeanDefinition 是 Spring Framework 中定义 Bean 的配置元信息接口，包含：
+
+
+
+#### · Bean 的类名
+
+ 包含包名（全路径类名），对应的类必须是一个具体的实现类。
+
+#### · Bean 行为元素，比如 作用域、自动绑定的模式、生命周期回调等。
+
+ 自动绑定就是 @Autowired 这种方式。
+
+ 生命周期回调就比如说生命周期初始化、销毁时候的一个回调。比如：InitializingBean，在初始化之前做一些事情。
+
+#### · 其他 Bean 引用，又可称为 合作者（Collaborators）或者 依赖（Dependencies）
+
+ 合作者可以认为是 Bean 的引用关系，或者称之为依赖。比如说依赖注入，也是把合作者或者是说把引用的 Bean 注入到自己本身里面来。
+
+ 当然依赖注入不仅仅是注入 Bean ，还可以注入其他配置。
+
+
+
+
+
+##### BeanDefinition 源代码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.config;
+
+import org.springframework.beans.BeanMetadataElement;
+import org.springframework.beans.MutablePropertyValues;
+import org.springframework.core.AttributeAccessor;
+import org.springframework.core.ResolvableType;
+import org.springframework.lang.Nullable;
+
+/**
+ * A BeanDefinition describes a bean instance, which has property values,
+ * constructor argument values, and further information supplied by
+ * concrete implementations.
+ *
+ * <p>This is just a minimal interface: The main intention is to allow a
+ * {@link BeanFactoryPostProcessor} to introspect and modify property values
+ * and other bean metadata.
+ *
+ * @author Juergen Hoeller
+ * @author Rob Harrop
+ * @since 19.03.2004
+ * @see ConfigurableListableBeanFactory#getBeanDefinition
+ * @see org.springframework.beans.factory.support.RootBeanDefinition
+ * @see org.springframework.beans.factory.support.ChildBeanDefinition
+ */
+public interface BeanDefinition extends AttributeAccessor, BeanMetadataElement {
+
+	/**
+		指的是 Spring 的一个作用域的范围，这里是单例
+		
+	 * Scope identifier for the standard singleton scope: {@value}.
+	 * <p>Note that extended bean factories might support further scopes.
+	 * @see #setScope
+	 * @see ConfigurableBeanFactory#SCOPE_SINGLETON
+	 */
+	String SCOPE_SINGLETON = ConfigurableBeanFactory.SCOPE_SINGLETON;
+
+	/**
+		原型模式，每次请求都会创建一个新的 Bean 注入到另一个 Bean 中。或者是调用 容器的 getBean() 方法
+		才会将 Bean 生成到 BeanFactory 中
+		
+	 * Scope identifier for the standard prototype scope: {@value}.
+	 * <p>Note that extended bean factories might support further scopes.
+	 * @see #setScope
+	 * @see ConfigurableBeanFactory#SCOPE_PROTOTYPE
+	 */
+	String SCOPE_PROTOTYPE = ConfigurableBeanFactory.SCOPE_PROTOTYPE;
+
+
+	/**
+		应用角色
+		
+	 * Role hint indicating that a {@code BeanDefinition} is a major part
+	 * of the application. Typically corresponds to a user-defined bean.
+	 */
+	int ROLE_APPLICATION = 0;
+
+	/**
+		这是一个辅助角色 - 支持
+		
+	 * Role hint indicating that a {@code BeanDefinition} is a supporting
+	 * part of some larger configuration, typically an outer
+	 * {@link org.springframework.beans.factory.parsing.ComponentDefinition}.
+	 * {@code SUPPORT} beans are considered important enough to be aware
+	 * of when looking more closely at a particular
+	 * {@link org.springframework.beans.factory.parsing.ComponentDefinition},
+	 * but not when looking at the overall configuration of an application.
+	 */
+	int ROLE_SUPPORT = 1;
+
+	/**
+		标识 Bean 可以用于一些基础设施，不是给应用用的，是给框架用的
+		
+	 * Role hint indicating that a {@code BeanDefinition} is providing an
+	 * entirely background role and has no relevance to the end-user. This hint is
+	 * used when registering beans that are completely part of the internal workings
+	 * of a {@link org.springframework.beans.factory.parsing.ComponentDefinition}.
+	 */
+	int ROLE_INFRASTRUCTURE = 2;
+
+
+	// Modifiable attributes
+
+	/**
+		这里就是讲 Spring 的 SuperUser 和 User 的继承关系用到的，
+		这里和 java 一样，只会有一个双亲，不会有两个
+		
+	 * Set the name of the parent definition of this bean definition, if any.
+	 */
+	void setParentName(@Nullable String parentName);
+
+	/**
+	 * Return the name of the parent definition of this bean definition, if any.
+	 */
+	@Nullable
+	String getParentName();
+
+	/**
+		设置 Bean 的全名称
+		
+	 * Specify the bean class name of this bean definition.
+	 * <p>The class name can be modified during bean factory post-processing,
+	 * typically replacing the original class name with a parsed variant of it.
+	 * @see #setParentName
+	 * @see #setFactoryBeanName
+	 * @see #setFactoryMethodName
+	 */
+	void setBeanClassName(@Nullable String beanClassName);
+
+	/**
+		获取 Bean 的全名称
+		
+	 * Return the current bean class name of this bean definition.
+	 * <p>Note that this does not have to be the actual class name used at runtime, in
+	 * case of a child definition overriding/inheriting the class name from its parent.
+	 * Also, this may just be the class that a factory method is called on, or it may
+	 * even be empty in case of a factory bean reference that a method is called on.
+	 * Hence, do <i>not</i> consider this to be the definitive bean type at runtime but
+	 * rather only use it for parsing purposes at the individual bean definition level.
+	 * @see #getParentName()
+	 * @see #getFactoryBeanName()
+	 * @see #getFactoryMethodName()
+	 */
+	@Nullable
+	String getBeanClassName();
+
+	/**
+		设置作用域，后面会专门说 单例、圆形，get Request Application Session 这样的作用域
+		
+	 * Override the target scope of this bean, specifying a new scope name.
+	 * @see #SCOPE_SINGLETON
+	 * @see #SCOPE_PROTOTYPE
+	 */
+	void setScope(@Nullable String scope);
+
+	/**
+		获取作用域
+		
+	 * Return the name of the current target scope for this bean,
+	 * or {@code null} if not known yet.
+	 */
+	@Nullable
+	String getScope();
+
+	/**
+		设置初始化的模式，决定 上下文 getBean 的时候创建 Bean 还是上下文启动（refresh）的时候创建 Bean
+		
+	 * Set whether this bean should be lazily initialized.
+	 * <p>If {@code false}, the bean will get instantiated on startup by bean
+	 * factories that perform eager initialization of singletons.
+	 */
+	void setLazyInit(boolean lazyInit);
+
+	/**
+	 * Return whether this bean should be lazily initialized, i.e. not
+	 * eagerly instantiated on startup. Only applicable to a singleton bean.
+	 */
+	boolean isLazyInit();
+
+	/**
+		和依赖有关系，很多场景我们不了解我们的依赖，但是有一种场景，我们非常清楚依赖，比如 UserFactory 依赖 User 对象，
+		那么可以把 User 的名称直接关联到这里面来。
+		
+	 * Set the names of the beans that this bean depends on being initialized.
+	 * The bean factory will guarantee that these beans get initialized first.
+	 */
+	void setDependsOn(@Nullable String... dependsOn);
+
+	/**
+	 * Return the bean names that this bean depends on.
+	 */
+	@Nullable
+	String[] getDependsOn();
+
+	/**
+		设置自动装配候选人，默认情况 true ,大部分情况都是 true
+		
+	 * Set whether this bean is a candidate for getting autowired into some other bean.
+	 * <p>Note that this flag is designed to only affect type-based autowiring.
+	 * It does not affect explicit references by name, which will get resolved even
+	 * if the specified bean is not marked as an autowire candidate. As a consequence,
+	 * autowiring by name will nevertheless inject a bean if the name matches.
+	 */
+	void setAutowireCandidate(boolean autowireCandidate);
+
+	/**
+		判断自动装配候选人
+		
+	 * Return whether this bean is a candidate for getting autowired into some other bean.
+	 */
+	boolean isAutowireCandidate();
+
+	/**
+		前面讲 在多个 User 对象的时候，SuperUser 继承了 User,通过 BeanFactory 获取 User 就会说有多个 User
+		并且报错了，我们给 SuperUser 在 xml <bean> 配置里面加了一个 primary="true" 属性，来标识通过 BeanFactory
+		来 getBean 的时候，我指定 User，Spring 容器应该给我返回哪一个 User。
+		
+	 * Set whether this bean is a primary autowire candidate.
+	 * <p>If this value is {@code true} for exactly one bean among multiple
+	 * matching candidates, it will serve as a tie-breaker.
+	 */
+	void setPrimary(boolean primary);
+
+	/**
+	 * Return whether this bean is a primary autowire candidate.
+	 */
+	boolean isPrimary();
+
+	/**
+		通过实例化的方式来创建 Bean。比如：bean-instanstation-context.xml 
+		通过 静态方法、普通方法、抽象工厂（FactoryBean）、静态工厂（UserFactoryBean）
+		<bean factory-bean="userFactory" 就是代表的这里的名称
+		
+	 * Specify the factory bean to use, if any.
+	 * This the name of the bean to call the specified factory method on.
+	 * @see #setFactoryMethodName
+	 */
+	void setFactoryBeanName(@Nullable String factoryBeanName);
+
+	/**
+	 * Return the factory bean name, if any.
+	 */
+	@Nullable
+	String getFactoryBeanName();
+
+	/**
+	
+		和 FactoryBeanName 同理，这里是设置 <bean factory-method="createUser" > 
+		createUser 就被设置在这里了
+	
+	 * Specify a factory method, if any. This method will be invoked with
+	 * constructor arguments, or with no arguments if none are specified.
+	 * The method will be invoked on the specified factory bean, if any,
+	 * or otherwise as a static method on the local bean class.
+	 * @see #setFactoryBeanName
+	 * @see #setBeanClassName
+	 */
+	void setFactoryMethodName(@Nullable String factoryMethodName);
+
+	/**
+	 * Return a factory method, if any.
+	 */
+	@Nullable
+	String getFactoryMethodName();
+
+	/**
+	
+		构造器参数：这个地方比较不好理解。
+		
+		构造器参数不会去记录构造方法的参数名称，只会按照构造方法的顺序去设置属性 0 1 2 这样。
+		因为构造方法不会涉及到 setter 方法的名称。想想反射调用 setter 方法。。
+	
+	 * Return the constructor argument values for this bean.
+	 * <p>The returned instance can be modified during bean factory post-processing.
+	 * @return the ConstructorArgumentValues object (never {@code null})
+	 */
+	ConstructorArgumentValues getConstructorArgumentValues();
+
+	/**
+	 * Return if there are constructor argument values defined for this bean.
+	 * @since 5.0.2
+	 */
+	default boolean hasConstructorArgumentValues() {
+		return !getConstructorArgumentValues().isEmpty();
+	}
+
+	/**
+	 * Return the property values to be applied to a new instance of the bean.
+	 * <p>The returned instance can be modified during bean factory post-processing.
+	 * @return the MutablePropertyValues object (never {@code null})
+	 */
+	MutablePropertyValues getPropertyValues();
+
+	/**
+	 * Return if there are property values values defined for this bean.
+	 * @since 5.0.2
+	 */
+	default boolean hasPropertyValues() {
+		return !getPropertyValues().isEmpty();
+	}
+
+	/**
+	
+		初始化方法的设置
+	
+	 * Set the name of the initializer method.
+	 * @since 5.1
+	 */
+	void setInitMethodName(@Nullable String initMethodName);
+
+	/**
+		
+		初始化方法的获取
+	
+	 * Return the name of the initializer method.
+	 * @since 5.1
+	 */
+	@Nullable
+	String getInitMethodName();
+
+	/**
+	
+		销毁方法的设置
+	
+	 * Set the name of the destroy method.
+	 * @since 5.1
+	 */
+	void setDestroyMethodName(@Nullable String destroyMethodName);
+
+	/**
+		
+		销毁方法的获取
+	
+	 * Return the name of the destroy method.
+	 * @since 5.1
+	 */
+	@Nullable
+	String getDestroyMethodName();
+
+	/**
+	 * Set the role hint for this {@code BeanDefinition}. The role hint
+	 * provides the frameworks as well as tools with an indication of
+	 * the role and importance of a particular {@code BeanDefinition}.
+	 * @since 5.1
+	 * @see #ROLE_APPLICATION
+	 * @see #ROLE_SUPPORT
+	 * @see #ROLE_INFRASTRUCTURE
+	 */
+	void setRole(int role);
+
+	/**
+	 * Get the role hint for this {@code BeanDefinition}. The role hint
+	 * provides the frameworks as well as tools with an indication of
+	 * the role and importance of a particular {@code BeanDefinition}.
+	 * @see #ROLE_APPLICATION
+	 * @see #ROLE_SUPPORT
+	 * @see #ROLE_INFRASTRUCTURE
+	 */
+	int getRole();
+
+	/**
+	
+		这玩意只要是给人看的描述。
+	
+	 * Set a human-readable description of this bean definition.
+	 * @since 5.1
+	 */
+	void setDescription(@Nullable String description);
+
+	/**
+	 * Return a human-readable description of this bean definition.
+	 */
+	@Nullable
+	String getDescription();
+
+
+	// Read-only attributes
+
+	/**
+	 * Return a resolvable type for this bean definition,
+	 * based on the bean class or other specific metadata.
+	 * <p>This is typically fully resolved on a runtime-merged bean definition
+	 * but not necessarily on a configuration-time definition instance.
+	 * @return the resolvable type (potentially {@link ResolvableType#NONE})
+	 * @since 5.2
+	 * @see ConfigurableBeanFactory#getMergedBeanDefinition
+	 */
+	ResolvableType getResolvableType();
+
+	/**
+	 * Return whether this a <b>Singleton</b>, with a single, shared instance
+	 * returned on all calls.
+	 * @see #SCOPE_SINGLETON
+	 */
+	boolean isSingleton();
+
+	/**
+	 * Return whether this a <b>Prototype</b>, with an independent instance
+	 * returned for each call.
+	 * @since 3.0
+	 * @see #SCOPE_PROTOTYPE
+	 */
+	boolean isPrototype();
+
+	/**
+	 * Return whether this bean is "abstract", that is, not meant to be instantiated.
+	 */
+	boolean isAbstract();
+
+	/**
+	 * Return a description of the resource that this bean definition
+	 * came from (for the purpose of showing context in case of errors).
+	 */
+	@Nullable
+	String getResourceDescription();
+
+	/**
+	 * Return the originating BeanDefinition, or {@code null} if none.
+	 * Allows for retrieving the decorated bean definition, if any.
+	 * <p>Note that this method returns the immediate originator. Iterate through the
+	 * originator chain to find the original BeanDefinition as defined by the user.
+	 */
+	@Nullable
+	BeanDefinition getOriginatingBeanDefinition();
+
+}
+
+```
+
+
+
+从这里能够看出 Spring 的 BeanDefinition 是一个定义了各种元信息的接口，通过这个接口我们可以允许我们存储数据，不管我们 setter 也好，构造方法也好，
+
+Property 也好，他都提供了 getter 方法让我们进行操作。
+
+
+
+
+
+
+
+### 劝退面试题： Spring 容器是怎么管理注册 Bean 的？
+
+答：这里不先给答案了。。。。这个玩意非常复杂，早期版本得从 XmlBeanFactoty 的读取 xml 开始，现在的5.2.2版本 也得从 
+
+AnnotationConfigApplicationContext 这个类的 refresh 开始看。这里可以思考下，IoC 配置元信息的读取和解析、依赖查找和注入以及 Bean 生命周期等
+
+是怎么做的。
+
+只有知道了 IoC配置元信息额读取和解析、依赖查找和注入以及 Bean 生命周期，我们才能再次论述。这里点到为止。
+
+
+
+
+
+### 总结：
+
+​	我们看了这么多，大致了解了一些 Spring 的基础，包括 Bean 的定义，以及 BeanDefinition 的元信息，还有一些基本的生命周期
+
+（
+
+​	实例化：四种常见 + 三种特殊、
+
+​	初始化：spring ioc 容器启动初始化、
+
+​	延迟初始化：BeanFactory 开始 getBean 的时候初始化、
+
+​	销毁、
+
+​	gc （garbage collection）回收
+
+）。
+
+##### 学完这些就能够掌握一些基本的 Spring 特性。这些对后面的 IoC 生命周期和 Bean 的生命周期学习非常有用。加油。
