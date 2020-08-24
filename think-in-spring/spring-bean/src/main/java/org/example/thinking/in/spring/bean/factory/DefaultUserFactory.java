@@ -1,15 +1,18 @@
 package org.example.thinking.in.spring.bean.factory;
 
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+import javax.security.auth.Destroyable;
 
 /**
  * 默认 UserFactory 的实现 {@link UserFactory}
  * @author WTY
  * @date 2020/8/20 0:11
  **/
-public class DefaultUserFactory implements UserFactory, InitializingBean {
+public class DefaultUserFactory implements UserFactory, InitializingBean, DisposableBean {
 
     // Spring Bean 初始化章节增加
     @PostConstruct
@@ -32,4 +35,23 @@ public class DefaultUserFactory implements UserFactory, InitializingBean {
     }
 
 
+    //Spring Bean 销毁章节增加
+    @PreDestroy
+    public void preDestroy(){
+        System.err.println("--------  @PreDestroy  DefaultUserFactory 销毁  ----------");
+    }
+
+
+    @Override
+    public void destroy() throws Exception {
+        System.err.println("--------  DisposableBean  DefaultUserFactory 销毁  ----------");
+    }
+
+    public void destroyWithBean(){
+        System.err.println("--------  @Bean  DefaultUserFactory 销毁  ----------");
+    }
+
+    public void destroyWithXml(){
+        System.err.println("--------  XML  DefaultUserFactory 销毁  ----------");
+    }
 }
