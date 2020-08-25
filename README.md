@@ -5231,3 +5231,366 @@ AnnotationConfigApplicationContext 这个类的 refresh 开始看。这里可以
 ）。
 
 ##### 学完这些就能够掌握一些基本的 Spring 特性。这些对后面的 IoC 生命周期和 Bean 的生命周期学习非常有用。加油。
+
+
+
+
+
+
+
+
+
+
+
+# Spring IoC 依赖查找部分（Dependency Lookup）。
+
+
+
+## 目录：
+
+### 	1：依赖查找的今世前生
+
+### 	2：单一类型依赖查找
+
+### 	3：集合类型依赖查找
+
+### 	4：层次性依赖查找（上下文层级关系）
+
+### 	5：延迟依赖查找
+
+### 	6：安全依赖查找（可规避异常查找）
+
+### 	7：内建可查找的依赖
+
+### 	8：依赖查找中的经典异常
+
+### 	9：面试题精选
+
+
+
+
+
+
+
+## 1：依赖查找的今世前生：Spring IoC 从 Java 标准中学到了什么？
+
+
+
+### · 单一类型依赖查找：
+
+### 	· JNDI - javax.naming.Context#lookup(javax.naming.Name)
+
+​			JNDI 是 Java SE 里面的一个实现。
+
+### 	· JavaBeans - java.beans.beancontext.BeanContext
+
+
+
+### · 集合类型依赖查找：
+
+### 	· java.beans.beancontext.BeanContext
+
+
+
+### · 层次性依赖查找：
+
+### 	· java.beans.beancontext.BeanContext
+
+
+
+
+
+#####  javax.naming.Context 源码：
+
+```java
+package javax.naming;
+
+import java.util.Hashtable;
+
+public interface Context {
+
+   //根据封装的 Name 进行依赖查找
+    public Object lookup(Name name) throws NamingException;
+
+    //根据 String 类型的名称 进行依赖查找。这个 Object是本地的还是远程的，取决于本地的环境
+    //好比 EJB 里面有 LocalBean 和 RemoteBean,就是关于本地 Bean 和远程 Bean
+    public Object lookup(String name) throws NamingException;
+
+    
+    public void bind(Name name, Object obj) throws NamingException;
+
+    
+    public void bind(String name, Object obj) throws NamingException;
+
+    
+    public void rebind(Name name, Object obj) throws NamingException;
+
+    
+    public void rebind(String name, Object obj) throws NamingException;
+
+    
+    public void unbind(Name name) throws NamingException;
+
+    
+    public void unbind(String name) throws NamingException;
+
+    
+    public void rename(Name oldName, Name newName) throws NamingException;
+
+    
+    public void rename(String oldName, String newName) throws NamingException;
+
+    
+    public NamingEnumeration<NameClassPair> list(Name name)
+        throws NamingException;
+
+    
+    public NamingEnumeration<NameClassPair> list(String name)
+        throws NamingException;
+
+    
+    public NamingEnumeration<Binding> listBindings(Name name)
+        throws NamingException;
+
+    
+    public NamingEnumeration<Binding> listBindings(String name)
+        throws NamingException;
+
+    
+    public void destroySubcontext(Name name) throws NamingException;
+
+    
+    public void destroySubcontext(String name) throws NamingException;
+
+    
+    public Context createSubcontext(Name name) throws NamingException;
+
+    
+    public Context createSubcontext(String name) throws NamingException;
+
+   
+    public Object lookupLink(Name name) throws NamingException;
+
+    
+    public Object lookupLink(String name) throws NamingException;
+
+    
+    public NameParser getNameParser(Name name) throws NamingException;
+
+    
+    public NameParser getNameParser(String name) throws NamingException;
+
+    
+    public Name composeName(Name name, Name prefix)
+        throws NamingException;
+
+    
+    public String composeName(String name, String prefix)
+            throws NamingException;
+
+    
+    public Object addToEnvironment(String propName, Object propVal)
+        throws NamingException;
+
+    
+    public Object removeFromEnvironment(String propName)
+        throws NamingException;
+
+    
+    public Hashtable<?,?> getEnvironment() throws NamingException;
+
+    rows  NamingException if a naming exception is encountered
+     */
+    public void close() throws NamingException;
+
+    
+    public String getNameInNamespace() throws NamingException;
+
+// public static final:  JLS says recommended style is to omit these modifiers
+// because they are the default
+
+    
+    String INITIAL_CONTEXT_FACTORY = "java.naming.factory.initial";
+
+    
+    String OBJECT_FACTORIES = "java.naming.factory.object";
+
+    
+    String STATE_FACTORIES = "java.naming.factory.state";
+
+    
+    String URL_PKG_PREFIXES = "java.naming.factory.url.pkgs";
+
+    
+    String PROVIDER_URL = "java.naming.provider.url";
+
+    
+    String DNS_URL = "java.naming.dns.url";
+
+    
+    String AUTHORITATIVE = "java.naming.authoritative";
+
+    
+    String BATCHSIZE = "java.naming.batchsize";
+
+    
+    String REFERRAL = "java.naming.referral";
+
+    
+    String SECURITY_PROTOCOL = "java.naming.security.protocol";
+
+    
+    String SECURITY_AUTHENTICATION = "java.naming.security.authentication";
+
+    
+    String SECURITY_PRINCIPAL = "java.naming.security.principal";
+
+    
+
+    String SECURITY_CREDENTIALS = "java.naming.security.credentials";
+    
+    
+    String LANGUAGE = "java.naming.language";
+
+   
+    String APPLET = "java.naming.applet";
+};
+
+```
+
+
+
+##### BeanContext 源码：
+
+```java
+package java.beans.beancontext;
+
+import java.beans.DesignMode;
+import java.beans.Visibility;
+
+import java.io.InputStream;
+import java.io.IOException;
+
+import java.net.URL;
+
+import java.util.Collection;
+import java.util.Locale;
+
+/*
+	他是 javaBeans 规范里面比较特殊的一种实现方式
+	Spring IoC 里面的 BeanFactory、ApplicationContext 参考了他的实现。
+	这个实现一部分给我们基本的一些计算使用，一部分给了 GUI 来使用。
+	比如 DesignMode，Visibility（是否可见）这么几种方式
+	
+	细心观察的话，没有发现什么 依赖查找，但是继承了 Collection 这个接口（集合）。这个集合里面的所有成员就是一个 Bean。
+	因此可以通过操作集合的方式进行 CRUD。进而达到一个维护 Bean 的工作
+*/
+
+@SuppressWarnings("rawtypes")
+public interface BeanContext extends BeanContextChild, Collection, DesignMode, Visibility {
+
+    
+    Object instantiateChild(String beanName) throws IOException, ClassNotFoundException;
+
+    
+    InputStream getResourceAsStream(String name, BeanContextChild bcc) throws IllegalArgumentException;
+
+    
+    URL getResource(String name, BeanContextChild bcc) throws IllegalArgumentException;
+
+     
+    void addBeanContextMembershipListener(BeanContextMembershipListener bcml);
+
+     
+    void removeBeanContextMembershipListener(BeanContextMembershipListener bcml);
+
+    
+    public static final Object globalHierarchyLock = new Object();
+}
+
+```
+
+
+
+BeanContext 一个子类和两个实现类：
+
+​	接口：BeanContextServices
+
+​	实现类：BeanContextServicesSupport、BeanContextSupport
+
+
+
+##### BeanContextServices 源码：
+
+```java
+package java.beans.beancontext;
+
+import java.util.Iterator;
+
+import java.util.TooManyListenersException;
+
+import java.beans.beancontext.BeanContext;
+
+import java.beans.beancontext.BeanContextServiceProvider;
+
+import java.beans.beancontext.BeanContextServicesListener;
+
+
+
+public interface BeanContextServices extends BeanContext, BeanContextServicesListener {
+
+    //类似于增加一个 service 组件
+    boolean addService(Class serviceClass, BeanContextServiceProvider serviceProvider);
+
+    //删除一个 service 组件
+    void revokeService(Class serviceClass, BeanContextServiceProvider serviceProvider, boolean revokeCurrentServicesNow);
+
+    //是否有 service 类似于 BeanDefinition
+    boolean hasService(Class serviceClass);
+
+   //映射的关系，根据某种方式来获取 Bean
+    Object getService(BeanContextChild child, Object requestor, Class serviceClass, Object serviceSelector, BeanContextServiceRevokedListener bcsrl) throws TooManyListenersException;
+
+    
+    void releaseService(BeanContextChild child, Object requestor, Object service);
+
+    // 一对多的方式，一个类会返回多个方法，属于依赖查找。
+    Iterator getCurrentServiceClasses();
+
+    
+    Iterator getCurrentServiceSelectors(Class serviceClass);
+
+    
+    void addBeanContextServicesListener(BeanContextServicesListener bcsl);
+
+    
+    void removeBeanContextServicesListener(BeanContextServicesListener bcsl);
+}
+
+```
+
+
+
+##### 什么是层次性查找？
+
+​	需要借助 javaBeans 规范。
+
+​		https://www.cnblogs.com/zsychanpin/p/7127698.html
+
+其实这个 javaBeans 做为一个可操作性的运行时容器， 可分为两个方面，一个是 javaBeans ，一个是 services。例如：Spring 里面所有的对象都是 Bean，并且
+
+分为 Component、Service、Controller、Repository 等。
+
+
+
+![image-20200825232845383](C:\Users\WTY\AppData\Roaming\Typora\typora-user-images\image-20200825232845383.png)
+
+
+
+### 总结：
+
+​	通过规范学习 + 源码分析，可以得到一个结论。Spring 在很大程度上抄袭了 JavaBeans 。但是 Spring 的依赖查找或者 传统 Java 的依赖查找是有所根源的。
+
+后面会依次的学习单一类型、集合类型、层次性查找他们是怎么实现的。不过 Spring 的实现相对于 JavaBeans 、JNDI的实现确实好理解很多，这也是我们为
+
+什么用 Spring 的原因，因此我们更应该发现源头，弥补不足，就能创新了。
