@@ -5594,3 +5594,180 @@ public interface BeanContextServices extends BeanContext, BeanContextServicesLis
 后面会依次的学习单一类型、集合类型、层次性查找他们是怎么实现的。不过 Spring 的实现相对于 JavaBeans 、JNDI的实现确实好理解很多，这也是我们为
 
 什么用 Spring 的原因，因此我们更应该发现源头，弥补不足，就能创新了。
+
+
+
+
+
+## 2：单一类型依赖查找：如何查找已知名称或类型的 Bean 对象？
+
+
+
+在 IoC 概述的时候提了一点，这里会补充说明。
+
+
+
+##### 单一类型依赖查找接口 - BeanFactory
+
+##### 	1：根据 Bean 名称查找：
+
+##### 			getBean( String )
+
+##### 			spring 2.5 覆盖默认参数：getBean( String , Object ... )
+
+
+
+##### 	2：根据 Bean类型查找：
+
+##### 			· Bean实时查找：
+
+##### 				· Spring 3.0 	getBean( Class )
+
+##### 				· Spring 4.1 覆盖默认参数 	getBean( Class , Object ... )
+
+
+
+##### 			· Spring 5.1 Bean 延迟查找：
+
+##### 				· getBeanProvider( Class )
+
+##### 				· getBeanProvider( ResolableType )
+
+
+
+##### 			· 根据 Bean 名称 + Bean 类型查找：
+
+##### 				· getBean( String , Class )
+
+
+
+不推荐使用 覆盖默认参数的方式去进行依赖查找。看下 BeanFactory 的 API 就明白了~
+
+
+
+##### 根据 type 进行覆盖：
+
+```java
+	/**
+		这里是说返回一个实例，这个实例或许是单例的，也有可能是原生。。原生还好，假如是单例的，没调用一次就会覆盖一次方法。
+		所以说用 BeanFactory 的话，最好用只读的方式去 getBean。如果非要覆盖的话，就得去把原有的 BeanDefinition 删除，然后覆盖。
+	 * Return an instance, which may be shared or independent, of the specified bean.
+	 * <p>Allows for specifying explicit constructor arguments / factory method arguments,
+	 * overriding the specified default arguments (if any) in the bean definition.
+	 * <p>This method goes into {@link ListableBeanFactory} by-type lookup territory
+	 * but may also be translated into a conventional by-name lookup based on the name
+	 * of the given type. For more extensive retrieval operations across sets of beans,
+	 * use {@link ListableBeanFactory} and/or {@link BeanFactoryUtils}.
+	 * @param requiredType type the bean must match; can be an interface or superclass
+	 * @param args arguments to use when creating a bean instance using explicit arguments
+	 * (only applied when creating a new instance as opposed to retrieving an existing one)
+	 * @return an instance of the bean
+	 * @throws NoSuchBeanDefinitionException if there is no such bean definition
+	 * @throws BeanDefinitionStoreException if arguments have been given but
+	 * the affected bean isn't a prototype
+	 * @throws BeansException if the bean could not be created
+	 * @since 4.1
+	 */
+	<T> T getBean(Class<T> requiredType, Object... args) throws BeansException;
+```
+
+
+
+##### 延迟查找是重点：
+
+​	getBeanProvider() 返回一个 ObjectProvider 类，他类似于 ObjectFactory，因为 ObjectProvider 继承了 ObjectFactory。
+
+ObjectFactory 的特性是根据泛型去关联一个 Bean。相关代码在 ioc-container-overview 模块里面。
+
+
+
+##### dependency-lookup-context.xml
+
+```xml
+<bean id="objectFactoryBean" class="org.springframework.beans.factory.config.ObjectFactoryCreatingFactoryBean">
+        <property name="targetBeanName" value="user" />
+    </bean>
+```
+
+
+
+##### UserRepository.java
+
+```java
+package org.example.thinking.in.spring.ioc.overview.dependency.repository;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.ObjectFactory;
+import org.springframework.context.ApplicationContext;
+
+import java.util.Collection;
+
+/**
+ * 用户信息仓库
+ * @author WTY
+ * @date 2020/8/15 17:37
+ **/
+public class UserRepository {
+
+    //自定义 Bean
+    private Collection<User> users;
+
+    //内建 非 Bean 对象（依赖）
+    private BeanFactory beanFactory;
+
+    private ObjectFactory<ApplicationContext> objectFactory;
+
+    public Collection<User> getUsers() {
+        return users;
+    }
+
+    public void setUsers(Collection<User> users) {
+        this.users = users;
+    }
+
+    public BeanFactory getBeanFactory() {
+        return beanFactory;
+    }
+
+    public void setBeanFactory(BeanFactory beanFactory) {
+        this.beanFactory = beanFactory;
+    }
+
+    public ObjectFactory<ApplicationContext> getObjectFactory() {
+        return objectFactory;
+    }
+
+    public void setObjectFactory(ObjectFactory<ApplicationContext> objectFactory) {
+        this.objectFactory = objectFactory;
+    }
+
+    @Override
+    public String toString() {
+        return "UserRepository{" +
+                "users=" + users +
+                '}';
+    }
+}
+
+```
+
+
+
+##### DependencyLookupDemo.java
+
+```java
+//延时查找 ObjectFactory
+private static void lookupInLazy(BeanFactory beanFactory){
+
+    // ObjectFactory 、 BeanFactory 、FactoryBean有什么区别？
+    
+    /*
+    	ObjectFactory 有一个 FactoryBean的实现 ObjectFactoryCreatingFactoryBean
+     * */
+    ObjectFactory<User> objectFactory = (ObjectFactory<User>) beanFactory.getBean("objectFactoryBean");
+    User user = objectFactory.getObject();
+    System.out.println("延时查找 " + user);
+}
+```
+
