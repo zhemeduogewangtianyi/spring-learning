@@ -6853,3 +6853,245 @@ public class ObjectProviderDemo {
 ​	通过例子，我们知道了 ObjectProvider 对 java 1.8 的支持，和对非延迟初始化 Bean 的延迟加载是如何操作的。
 
 接下来将会对遗留的安全查找进行讨论，这和之前说的单一、集合类型依赖查找是有关联的。
+
+
+
+
+
+
+
+## 6：安全依赖查找
+
+
+
+##### 本章新增文件：
+
+##### TypeSafetyDependencyLookupDemo.java
+
+
+
+TypeSafetyDependencyLookupDemo.java
+
+```java
+package org.example.thinking.in.spring.denpendency.lookup;
+
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.ObjectFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+
+import java.util.Date;
+
+/**
+ * 类型安全的依赖查找示例
+ * */
+public class TypeSafetyDependencyLookupDemo {
+
+    public static void main(String[] args) {
+
+        //创建 BeanFactory 容器
+        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
+
+        //注册 TypeSafetyDependencyLookupDemo 为配置类 Configuration Class
+        applicationContext.register(TypeSafetyDependencyLookupDemo.class);
+
+        //启动 Spring IoC 容器上下文
+        applicationContext.refresh();
+
+        /** 单一类型 */
+
+        //演示 BeanFactory # getBean 方法进行依赖查找的安全性
+        displayBeanFactoryGetBean(applicationContext);
+
+        //演示 ObjectBeanFactory # getBean 方法进行依赖查找的安全性
+        displayObjectBeanFactoryGetObject(applicationContext.getBeanProvider(Date.class));
+
+        //展示 ObjectProvider # getIfAvailable 方法进行依赖查找的安全性
+        displayObjectProviderIfAvailableOps(applicationContext.getBeanProvider(Date.class));
+
+
+        /** 集合类型 */
+
+        //演示 ListableBeanFactory # getBeansOfType 进行依赖查找的安全性
+        displayListableBeanFactoryGetBeansOfType(applicationContext);
+
+        //演示 ObjectProvider # stream 方法进行依赖查找的安全性
+        diaplayObjectProviderStreamOps(applicationContext.getBeanProvider(Date.class));
+
+        //关闭 Spring IoC 容器上下文
+        applicationContext.close();
+
+    }
+
+    private static void diaplayObjectProviderStreamOps(ObjectProvider<Date> beanProvider) {
+
+        printBeansException("diaplayObjectProviderStreamOps", () -> {
+            beanProvider.forEach(System.out::println);
+        });
+
+    }
+
+    /** 演示 ListableBeanFactory # getBeansOfType 进行依赖查找的安全性 */
+    private static void displayListableBeanFactoryGetBeansOfType(ListableBeanFactory listableBeanFactory) {
+
+        printBeansException("displayListableBeanFactoryGetBeansOfType",() -> listableBeanFactory.getBeansOfType(Date.class).forEach((s, date) -> System.err.println(s + " " + date)));
+
+    }
+
+    /** 展示 ObjectProvider # getIfAvailable 方法进行依赖查找的安全性 */
+    private static void displayObjectProviderIfAvailableOps(ObjectProvider<Date> objectProvider) {
+
+        printBeansException("displayObjectProviderIfAvailableOps",() -> System.err.println(objectProvider.getIfAvailable()));
+//        printBeansException("displayObjectProviderIfAvailableOps",() -> System.err.println(objectProvider.getIfAvailable(Date::new)));
+
+    }
+
+    /** 演示 BeanFactory # getBean 方法进行依赖查找的安全性  */
+    private static void displayBeanFactoryGetBean(BeanFactory beanFactory){
+
+        printBeansException("displayBeanFactoryGetBean",() -> System.out.println(beanFactory.getBean(Date.class)));
+
+    }
+
+    /** 演示 ObjectBeanFactory # getBean 方法进行依赖查找的安全性  */
+    private static void displayObjectBeanFactoryGetObject(ObjectFactory<Date> objectFactory){
+
+        printBeansException("displayObjectBeanFactoryGetObject ", () -> System.out.println(objectFactory.getObject()));
+
+    }
+
+    /** 输出 */
+    private static void printBeansException(String msg,Runnable runnable){
+        System.err.println("\r\n current display : " + msg);
+        try{
+            runnable.run();
+        }catch(Exception e){
+            //这玩意是县城安全的，老铁们别在线上玩。。有发生死锁的老铁打来骂人热线。。。
+            e.printStackTrace();
+        }
+    }
+
+}
+
+```
+
+
+
+### ·	依赖查找安全性对比 - 又分为实时查找和非实时查找
+
+| 依赖查找类型     | 代表实现                             | 是否安全 | 查找类型 |
+| :--------------- | ------------------------------------ | -------- | -------- |
+| 单一类型依赖查找 | BeanFactory # getBean                | 否       | 实时查找 |
+|                  | ObjectFactory # getObject            | 否       | 延迟查找 |
+|                  | ObjectProvider # getIfAvailable      | 是       | 延迟查找 |
+|                  |                                      |          |          |
+| 集合类型依赖查找 | ListableBeanFactory # getBeansOfType | 是       |          |
+|                  | ObjectProvider # stream              | 是       |          |
+
+##### 注意哦：层次性依赖查找的安全性取决于其扩展的单一或者集合类型的 BeanFactory 接口哦。
+
+##### 因为 HierarchicalBeanFactory 是层次性依赖的接口，单一的继承了 BeanFactory ，但是 ConfigurableBeanFactory 继承了 HierarchicalBeanFactory，
+
+##### ConfiguableBeanFactory 的子类 ConfigurableListableBeanFactory 复合了 ListableBeanFactory、AutowireCapableBeanFactory、
+
+##### ConfigurableBeanFactory 这么三个接口，ListableBeanFactory 又继承了 BeanFactory ，支持单一类型依赖查找。所以说层次依赖性查找的安全性，取决于 
+
+##### HierarchicalBeanFactory 的子类是怎么实现的。
+
+
+
+##### 例如：DefaultListableBeanFactory 就是实现了 ConfigurableListableBeanFactory，因此这个既接口支持单一类型查找，又支持集合类型查找，
+
+##### 同时也支持层次性依赖查找。因此 DefaultListableBeanFactory 作为了 Spring 的一个兜底方案，因此内建的依赖查找复合接口仅此一个。
+
+
+
+
+
+##### 建议：如果用延迟加载的话，建议用 ObjectProvider 这个接口 ，因为他既可以表示单一类，又可以表示集合类，
+
+##### 所以 Spring Boot 和 Spring Cloud 里面大量的用了这玩意。
+
+
+
+##### BeanFactory # getBean 源代码：
+
+```java
+/**
+	 * Return the bean instance that uniquely matches the given object type, if any.
+	 * <p>This method goes into {@link ListableBeanFactory} by-type lookup territory
+	 * but may also be translated into a conventional by-name lookup based on the name
+	 * of the given type. For more extensive retrieval operations across sets of beans,
+	 * use {@link ListableBeanFactory} and/or {@link BeanFactoryUtils}.
+	 * @param requiredType type the bean must match; can be an interface or superclass
+	 * @return an instance of the single bean matching the required type
+	 
+	 这里说有两种异常的情况属于 BeansException
+	 1：就是 没有找到 Bean 定义会抛出 NoSuchBeanDefinitionException 的异常
+	 2：你要找的 Bean 定义不是唯一的，会抛出 NoUniqueBeanDefinitionException
+	 
+	 * @throws NoSuchBeanDefinitionException if no bean of the given type was found
+	 * @throws NoUniqueBeanDefinitionException if more than one bean of the given type was found
+	 * @throws BeansException if the bean could not be created
+	 * @since 3.0
+	 * @see ListableBeanFactory
+	 */
+	<T> T getBean(Class<T> requiredType) throws BeansException;
+```
+
+
+
+##### ListableBeanFactory # getBeansOfType 源代码：
+
+```java
+/**
+	 * Return the bean instances that match the given object type (including
+	 * subclasses), judging from either bean definitions or the value of
+	 * {@code getObjectType} in the case of FactoryBeans.
+	 * <p><b>NOTE: This method introspects top-level beans only.</b> It does <i>not</i>
+	 * check nested beans which might match the specified type as well.
+	 * <p>Does consider objects created by FactoryBeans, which means that FactoryBeans
+	 * will get initialized. If the object created by the FactoryBean doesn't match,
+	 * the raw FactoryBean itself will be matched against the type.
+	 * <p>Does not consider any hierarchy this factory may participate in.
+	 * Use BeanFactoryUtils' {@code beansOfTypeIncludingAncestors}
+	 * to include beans in ancestor factories too.
+	 * <p>Note: Does <i>not</i> ignore singleton beans that have been registered
+	 * by other means than bean definitions.
+	 * <p>This version of getBeansOfType matches all kinds of beans, be it
+	 * singletons, prototypes, or FactoryBeans. In most implementations, the
+	 * result will be the same as for {@code getBeansOfType(type, true, true)}.
+	 * <p>The Map returned by this method should always return bean names and
+	 * corresponding bean instances <i>in the order of definition</i> in the
+	 * backend configuration, as far as possible.
+	 * @param type the class or interface to match, or {@code null} for all concrete beans
+	 * @return a Map with the matching beans, containing the bean names as
+	 * keys and the corresponding bean instances as values
+	 
+	 	这里抛出的异常就比较单一了。
+	 	例如：当 Bean 创建的时候就有问题，好比 Bean 定于成了一个抽象类，这玩意本身就不能初始化。
+	 
+	 * @throws BeansException if a bean could not be created
+	 * @since 1.1.2
+	 * @see FactoryBean#getObjectType
+	 * @see BeanFactoryUtils#beansOfTypeIncludingAncestors(ListableBeanFactory, Class)
+	 */
+	<T> Map<String, T> getBeansOfType(@Nullable Class<T> type) throws BeansException;
+```
+
+
+
+### 总结：
+
+​	分别通过单一类型、集合类型的依赖查找判断他的安全性，其中我们发现单一类型依赖查找，相对于集合类型的依赖查找来说是不安全的。尤其像
+
+BeanFactory 的 getBean() 和 ObjectBeanFactory 的 getObject() 在 Bean 不存在的时候会抛出异常 BeansException（NoSuchBeanDefinitionException、
+
+NoUniqueBeanDefinitionException）。这个 Bean 一旦出现异常，我们会非常棘手，所以我们可以通过 ObjectProvider 的 getIfAvailable() 方法来进行
+
+兜底或者修复，以及排查。所以我们在 Spring Boot 和 Spring Cloud 场景中会经常遇到这样的实现。
+
+​	与此同时，集合类型依赖查找是比较安全的，所以他会返回一个 Map ，如果没有 Map 就是 null。真正实战的时候要根据场景去实现，推荐用
+
+ObjectProvider 这种方式来进行依赖查找，因为这样的方式 单一类型、集合类型都能进行依赖查找。
