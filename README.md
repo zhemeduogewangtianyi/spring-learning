@@ -6474,3 +6474,382 @@ ConfiguableListableBeanFactory 又是继承了 ListableBeanFactory、Configuable
 里面提供了一个 setParentBeanFactory( BeanFactory ) 的方法。这样就形成了一个读，一个写。
 
 ​	通过我们递归的案例，可以发现我们能够通过 HierarchicalBeanFactory 进行层次性的找整个上下文里面有没有相应的 Bean。
+
+
+
+
+
+## 5：延迟依赖查找：非延迟初始化 Bean 也能进行延迟查找？
+
+
+
+### 延迟依赖查找
+
+### 	·	Bean 延迟依赖查找接口
+
+### 		·	org.springframework.beans.factory.ObjectFactory
+
+​					通过 getObject() 的方式返回一个泛型所关联的 Bean
+
+### 		·	org.springframework.beans.factory.ObjectProvider
+
+​					ObjectProvider 继承于 ObjectFactory 这个接口，因此ObjectProvider 可以调用 ObjectFactory 的 getObject() 方法来获取
+
+​					当前所关联的 Bean 对象
+
+### 			·	Spring 5 对 java 8 特性扩展
+
+### 				·	函数式接口 （生产消费）
+
+### 					·	getIfAvailable( Supplier )
+
+### 					·	ifAvailable( Comsumer )
+
+### 				·	Stream 扩展 - stream()
+
+​								有序的 stream 是 sorted.stream 
+
+
+
+ObjectProvider 是 Spring 4.3 提供的一个接口，比如 Spring Boot 里面某些 Bean 没有被完全加载，可以使用 ObjectProvider 通过在某些阶段
+
+来进行加载，和 BeanFactory 的延迟加载非常类似。但是这里可以不需要 Bean 去定义他的 LazyInitialization = true，这些都是 Spring 来帮助
+
+我们做这些事情。
+
+
+
+##### ObjectProvider.java
+
+```java
+/*
+ * Copyright 2002-2018 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory;
+
+import java.util.Iterator;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
+
+import org.springframework.beans.BeansException;
+import org.springframework.lang.Nullable;
+
+/**
+ * A variant of {@link ObjectFactory} designed specifically for injection points,
+ * allowing for programmatic optionality and lenient not-unique handling.
+ *
+ * <p>As of 5.1, this interface extends {@link Iterable} and provides {@link Stream}
+ * support. It can be therefore be used in {@code for} loops, provides {@link #forEach}
+ * iteration and allows for collection-style {@link #stream} access.
+ *
+ * @author Juergen Hoeller
+ * @since 4.3
+ * @param <T> the object type
+ * @see BeanFactory#getBeanProvider
+ * @see org.springframework.beans.factory.annotation.Autowired
+ */
+public interface ObjectProvider<T> extends ObjectFactory<T>, Iterable<T> {
+
+	/**
+		这是一个重载方法，和 BeanFactory 的 getBean() 相呼应。通常都是用 ObjectFactory 里面的 getObject() 方法来操作。
+	 * Return an instance (possibly shared or independent) of the object
+	 * managed by this factory.
+	 * <p>Allows for specifying explicit construction arguments, along the
+	 * lines of {@link BeanFactory#getBean(String, Object...)}.
+	 * @param args arguments to use when creating a corresponding instance
+	 * @return an instance of the bean
+	 * @throws BeansException in case of creation errors
+	 * @see #getObject()
+	 */
+	T getObject(Object... args) throws BeansException;
+
+	/**
+		这是一种比较安全的方式。后面详细说明
+	 * Return an instance (possibly shared or independent) of the object
+	 * managed by this factory.
+	 * @return an instance of the bean, or {@code null} if not available
+	 * @throws BeansException in case of creation errors
+	 * @see #getObject()
+	 */
+	@Nullable
+	T getIfAvailable() throws BeansException;
+
+	/**
+		另外一种比较安全的实现。如果当前的 Bean 不存在，这里会返回一个 null，，
+		这里默认允许提供一个 Supplier 来给定默认值。
+		例如：想获取一个 DataSource，但是 DataSource 不存在，可以提供一个新的方式来操作。
+	 * Return an instance (possibly shared or independent) of the object
+	 * managed by this factory.
+	 * @param defaultSupplier a callback for supplying a default object
+	 * if none is present in the factory
+	 * @return an instance of the bean, or the supplied default object
+	 * if no such bean is available
+	 * @throws BeansException in case of creation errors
+	 * @since 5.0
+	 * @see #getIfAvailable()
+	 */
+	default T getIfAvailable(Supplier<T> defaultSupplier) throws BeansException {
+		T dependency = getIfAvailable();
+		return (dependency != null ? dependency : defaultSupplier.get());
+	}
+
+	/**
+		这里是消费的方式
+	 * Consume an instance (possibly shared or independent) of the object
+	 * managed by this factory, if available.
+	 * @param dependencyConsumer a callback for processing the target object
+	 * if available (not called otherwise)
+	 * @throws BeansException in case of creation errors
+	 * @since 5.0
+	 * @see #getIfAvailable()
+	 */
+	default void ifAvailable(Consumer<T> dependencyConsumer) throws BeansException {
+		T dependency = getIfAvailable();
+		if (dependency != null) {
+			dependencyConsumer.accept(dependency);
+		}
+	}
+
+	/**
+		这个也是类型安全的，后面详细说。
+	 * Return an instance (possibly shared or independent) of the object
+	 * managed by this factory.
+	 * @return an instance of the bean, or {@code null} if not available or
+	 * not unique (i.e. multiple candidates found with none marked as primary)
+	 * @throws BeansException in case of creation errors
+	 * @see #getObject()
+	 */
+	@Nullable
+	T getIfUnique() throws BeansException;
+
+	/**
+	 * Return an instance (possibly shared or independent) of the object
+	 * managed by this factory.
+	 * @param defaultSupplier a callback for supplying a default object
+	 * if no unique candidate is present in the factory
+	 * @return an instance of the bean, or the supplied default object
+	 * if no such bean is available or if it is not unique in the factory
+	 * (i.e. multiple candidates found with none marked as primary)
+	 * @throws BeansException in case of creation errors
+	 * @since 5.0
+	 * @see #getIfUnique()
+	 */
+	default T getIfUnique(Supplier<T> defaultSupplier) throws BeansException {
+		T dependency = getIfUnique();
+		return (dependency != null ? dependency : defaultSupplier.get());
+	}
+
+	/**
+	 * Consume an instance (possibly shared or independent) of the object
+	 * managed by this factory, if unique.
+	 * @param dependencyConsumer a callback for processing the target object
+	 * if unique (not called otherwise)
+	 * @throws BeansException in case of creation errors
+	 * @since 5.0
+	 * @see #getIfAvailable()
+	 */
+	default void ifUnique(Consumer<T> dependencyConsumer) throws BeansException {
+		T dependency = getIfUnique();
+		if (dependency != null) {
+			dependencyConsumer.accept(dependency);
+		}
+	}
+
+	/**
+		支持 stream() 的 嗲代器
+	 * Return an {@link Iterator} over all matching object instances,
+	 * without specific ordering guarantees (but typically in registration order).
+	 * @since 5.1
+	 * @see #stream()
+	 */
+	@Override
+	default Iterator<T> iterator() {
+		return stream().iterator();
+	}
+
+	/**
+		stream 的一些支持。
+	 * Return a sequential {@link Stream} over all matching object instances,
+	 * without specific ordering guarantees (but typically in registration order).
+	 * @since 5.1
+	 * @see #iterator()
+	 * @see #orderedStream()
+	 */
+	default Stream<T> stream() {
+		throw new UnsupportedOperationException("Multi element access not supported");
+	}
+
+	/**
+	 * Return a sequential {@link Stream} over all matching object instances,
+	 * pre-ordered according to the factory's common order comparator.
+	 * <p>In a standard Spring application context, this will be ordered
+	 * according to {@link org.springframework.core.Ordered} conventions,
+	 * and in case of annotation-based configuration also considering the
+	 * {@link org.springframework.core.annotation.Order} annotation,
+	 * analogous to multi-element injection points of list/array type.
+	 * @since 5.1
+	 * @see #stream()
+	 * @see org.springframework.core.OrderComparator
+	 */
+	default Stream<T> orderedStream() {
+		throw new UnsupportedOperationException("Ordered element access not supported");
+	}
+
+}
+
+```
+
+
+
+其实在之前 **ObjectProviderDemo.java** 里面已经做出了一个简要的说明。。。初始化一个 String 类型的 Hello World。。。
+
+当时我们通过 AnnotationConfigApplicationContext 的方式来获取到 ObjectProvider 这个接口，进而调用了 ObjectProvider 的
+
+getObject() 方法获取到的 Bean（String 类型的 Hello World）。这里请思考一个问题，假设我的 String 类型的 Hello World 不存在，
+
+咋办？
+
+
+
+##### ObjectProvider.java
+
+```java
+package org.example.thinking.in.spring.denpendency.lookup;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+
+import java.util.Iterator;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
+
+/**
+ * 通过 {@link ObjectProvider} 进行依赖查找
+ * */
+//Configuration 是非必须的注解
+public class ObjectProviderDemo {
+
+    public static void main(String[] args) {
+
+        //创建应用上下文
+        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
+
+        //将当前类注册为 AnnotationConfigApplicationContext 的 配置类 Config Class
+        applicationContext.register(ObjectProviderDemo.class);
+
+        //启动 Spring 应用上下文
+        applicationContext.refresh();
+
+        //通过 ObjectProvider 进行依赖查找
+        lookupByObjectProvider(applicationContext);
+
+        //依赖查找，当对象不存在的时候如何处理
+        lookupAvailable(applicationContext);
+
+        //依赖查找，通过 Stream 嗲代器的方式
+        lookupByStreamOps(applicationContext);
+
+        //关闭 Spring 应用上下文
+        applicationContext.close();
+
+
+    }
+
+    /** 依赖查找,通过 Stream 操作的方式 */
+    private static void lookupByStreamOps(AnnotationConfigApplicationContext applicationContext){
+        ObjectProvider<String> beanProvider = applicationContext.getBeanProvider(String.class);
+        Supplier<Stream<String>> beanProviderStream = new Supplier<Stream<String>>() {
+            @Override
+            public Stream<String> get() {
+                return beanProvider.stream();
+            }
+        };
+
+        //比较基本的一个 stream
+        beanProviderStream.get().forEach(beanName -> System.out.println("base : " + beanName));
+
+        //比较 low 的一种方式
+        Iterable<String> iterable = beanProvider;
+
+        for(Iterator<String> str = iterable.iterator() ; str.hasNext() ;  ){
+            String next = str.next();
+            System.out.println("low : " + next);
+        }
+
+        //看上比较吊
+        beanProviderStream.get().forEach(System.out::println);
+
+    }
+
+    /** 依赖查找，假设类不存在的补偿操作 */
+    private static void lookupAvailable(AnnotationConfigApplicationContext applicationContext){
+
+        ObjectProvider<User> beanProvider = applicationContext.getBeanProvider(User.class);
+
+        //没有就创建一个 最简单的 lambda 表达式方式
+//        User ifAvailable = beanProvider.getIfAvailable(() -> User.createUser());
+
+        //有点 low 的方式。
+//        User ifAvailable = beanProvider.getIfAvailable(new Supplier<User>() {
+//            @Override
+//            public User get() {
+//                return User.createUser();
+//            }
+//        });
+
+        //看上去比较吊的方式
+        User ifAvailable = beanProvider.getIfAvailable(User::createUser);
+
+        System.out.println(ifAvailable);
+    }
+
+    /** 依赖查找 调用 ObjectProvider 的父类 ObjectFactory 的 getObject() 方法 */
+    private static void lookupByObjectProvider(AnnotationConfigApplicationContext applicationContext) {
+        // spring 5.1 引入的。
+        ObjectProvider<String> beanProvider = applicationContext.getBeanProvider(String.class);
+        String hello = beanProvider.getObject();
+        System.out.println(hello);
+    }
+
+    @Primary
+    @Bean
+    public String helloWorld(){
+        //如果 @Bean 没有定义 Bean Name 那么方法名就是 Bean Name
+        return "Hello World !";
+    }
+
+    @Bean
+    public String ddMessage(){
+        return "ding ding message";
+    }
+
+}
+
+```
+
+
+
+
+
+### 总结：
+
+​	通过例子，我们知道了 ObjectProvider 对 java 1.8 的支持，和对非延迟初始化 Bean 的延迟加载是如何操作的。
+
+接下来将会对遗留的安全查找进行讨论，这和之前说的单一、集合类型依赖查找是有关联的。

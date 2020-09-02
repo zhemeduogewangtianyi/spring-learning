@@ -60,7 +60,7 @@ public class User {
         //bean 标签的属性会盖住这里的属性
         User user = new User();
         user.setId(88L);
-        user.setName("沙雕");
+        user.setName("小毛驴");
         System.err.println("静态方法");
         return user;
     }
