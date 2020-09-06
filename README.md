@@ -7095,3 +7095,3750 @@ NoUniqueBeanDefinitionException）。这个 Bean 一旦出现异常，我们会�
 ​	与此同时，集合类型依赖查找是比较安全的，所以他会返回一个 Map ，如果没有 Map 就是 null。真正实战的时候要根据场景去实现，推荐用
 
 ObjectProvider 这种方式来进行依赖查找，因为这样的方式 单一类型、集合类型都能进行依赖查找。
+
+
+
+
+
+
+
+
+
+## 7：内建可查找的依赖：哪些 Spring IoC 容器内建依赖可供查找？
+
+
+
+### 内建可查询依赖：ApplicationContext 内建依赖
+
+| Bean 名称                   | Bean 实例                        | 使用场景                                                     |
+| --------------------------- | -------------------------------- | ------------------------------------------------------------ |
+| environment                 | Environment 对象                 | 外部化配置以及 Profiles<br />environment 其实就是 Environment 接口的一个实现<br />外部化配置主要是指的 -D 这些参数之类的东西<br />这个配置可以在不同的阶段生成不同的行为，例如开发环境和生产环境之间的不同 |
+| systemProperties            | java.util.Properties 对象        | Java 系统属性<br />也算是 environment 的一部分配置。比如获取系统的路径 user.home、user.dll 这些东西 |
+| systemEnvironment           | java.util.Map 对象               | 操作系统环境变量<br />Java 的系统属性和 Java 的当前进程启动是有关系的，也就是说不同的 Java 进程，他们之间的系统属性是可以不同的。一般来说一个系统的系统参数都是统一的，当然环境变量也会区分当前用户的环境变量和整体系统的全局环境变量，这里主要是指当前用户的环境变量 |
+| messageSource               | MessageSource 对象               | 国际化文案<br />在 Spring MVC 里面，会有一个国际网文案的交互，比如表单验证失败了，他就会提醒我们表达是否唯一或者格式是否非法 |
+| lifecycleProcessor          | LifecycleProcessor 对象          | Lifecycle Bean 处理<br />在 Spring 里面有一个 Lifecycle 的接口，这个接口实际上是每个 Spring 的 Bean 都能实现的，lifecycleProcessor 就是去处理这些东西，因此就会有一些生命周期，比如启动（start）、停止（stop）。这些生命周期可以帮助我们去实现一些更细粒度化的生命周期管理。生命周期不仅仅是之前讨论过的 @PostConstract @Destory 等东西。 |
+| applicationEventMulticaster | ApplicationEventMulticaster 对象 | Spring 事件广播<br />当我 Spring 发布一个事件的时候，那么会有很多监听者监听这个事件，事件和监听者一般都是一对多的关系，这种方式就称之为广播的方式。在 Spring 里面不支持单一的广播（点对点）。 |
+
+不管 Spring Boot 还是 Spring cloud ，在 Spring 的应用上下文里面有一个抽象类叫做 AbstractApplicationContext ，这个抽象类是所有的应用上下文的一个
+
+基类，基本上所有应用上下文的实现，包括 注解的 AnnotationConfiguration、ApplicationContext， 以及 WEB 的实现都是基于 AbstractApplicationContext 
+
+来进行实现的。因此这个抽象类会在构建的时候（上下文启动 AnnotationConfigApplicationContext 的 refresh() 方法调用的时候），初始化一些相关的内部的
+
+一些依赖。那么这种内部依赖，我们就称之为内建的可查询的依赖。
+
+
+
+
+
+### 注解驱动 Spring 应用上下文内建可查找的依赖（部分）
+
+| Bean 名称                                                    | Bean 实例                              | 使用场景                                                     |
+| :----------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------ |
+| org.springframework.context.annotation.internal.ConfigurationAnnotationProcessor | ConfigurationAnnotationProcessor 对象  | 处理 Spring 配置，Bean 的后置处理。<br />主要是在 BeanFactroy 的生命周期中去做的，他是处理 Spring 配置类的一个很核心的要素。 |
+| org.springframework.context.annotation.internal.AutowiredAnnotationProcessor | AutowiredAnnotationProcessor 对象      | 处理 @Autowired 注解以及 @Value 注解                         |
+| org.springframework.context.annotation.internal.CommonAnnotationBeanPostProcessor | CommonAnnotationBeanPostProcessor 对象 | （条件激活）处理 JSR-250 注解，例如：@PostConstract 等注解   |
+| org.springframework.context.annotation.internal.EventListenerMethodProcessor | EventListenerMethodProcessor 对象      | 处理标注 @EventListener 的 Spring 事件监听方法               |
+
+
+
+internal 说明是内部的上下文 Bean 依赖，这个依赖只有当激活的时候（ xml 里面激活 Component-scan）才生效。
+
+
+
+##### ConfigurationClass.java 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context.annotation;
+
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+
+import org.springframework.beans.factory.parsing.Location;
+import org.springframework.beans.factory.parsing.Problem;
+import org.springframework.beans.factory.parsing.ProblemReporter;
+import org.springframework.beans.factory.support.BeanDefinitionReader;
+import org.springframework.core.io.DescriptiveResource;
+import org.springframework.core.io.Resource;
+import org.springframework.core.type.AnnotationMetadata;
+import org.springframework.core.type.classreading.MetadataReader;
+import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
+import org.springframework.util.ClassUtils;
+
+/**
+ * Represents a user-defined {@link Configuration @Configuration} class.
+ * Includes a set of {@link Bean} methods, including all such methods
+ * defined in the ancestry of the class, in a 'flattened-out' manner.
+ *
+ * @author Chris Beams
+ * @author Juergen Hoeller
+ * @author Phillip Webb
+ * @since 3.0
+ * @see BeanMethod
+ * @see ConfigurationClassParser
+ */
+final class ConfigurationClass {
+
+	private final AnnotationMetadata metadata;
+
+	private final Resource resource;
+
+	@Nullable
+	private String beanName;
+
+	private final Set<ConfigurationClass> importedBy = new LinkedHashSet<>(1);
+
+	private final Set<BeanMethod> beanMethods = new LinkedHashSet<>();
+
+	private final Map<String, Class<? extends BeanDefinitionReader>> importedResources =
+			new LinkedHashMap<>();
+
+	private final Map<ImportBeanDefinitionRegistrar, AnnotationMetadata> importBeanDefinitionRegistrars =
+			new LinkedHashMap<>();
+
+	final Set<String> skippedBeanMethods = new HashSet<>();
+
+
+	/**
+	 * Create a new {@link ConfigurationClass} with the given name.
+	 * @param metadataReader reader used to parse the underlying {@link Class}
+	 * @param beanName must not be {@code null}
+	 * @see ConfigurationClass#ConfigurationClass(Class, ConfigurationClass)
+	 */
+	public ConfigurationClass(MetadataReader metadataReader, String beanName) {
+		Assert.notNull(beanName, "Bean name must not be null");
+		this.metadata = metadataReader.getAnnotationMetadata();
+		this.resource = metadataReader.getResource();
+		this.beanName = beanName;
+	}
+
+	/**
+	 * Create a new {@link ConfigurationClass} representing a class that was imported
+	 * using the {@link Import} annotation or automatically processed as a nested
+	 * configuration class (if importedBy is not {@code null}).
+	 * @param metadataReader reader used to parse the underlying {@link Class}
+	 * @param importedBy the configuration class importing this one or {@code null}
+	 * @since 3.1.1
+	 */
+	public ConfigurationClass(MetadataReader metadataReader, @Nullable ConfigurationClass importedBy) {
+		this.metadata = metadataReader.getAnnotationMetadata();
+		this.resource = metadataReader.getResource();
+		this.importedBy.add(importedBy);
+	}
+
+	/**
+	 * Create a new {@link ConfigurationClass} with the given name.
+	 * @param clazz the underlying {@link Class} to represent
+	 * @param beanName name of the {@code @Configuration} class bean
+	 * @see ConfigurationClass#ConfigurationClass(Class, ConfigurationClass)
+	 */
+	public ConfigurationClass(Class<?> clazz, String beanName) {
+		Assert.notNull(beanName, "Bean name must not be null");
+		this.metadata = AnnotationMetadata.introspect(clazz);
+		this.resource = new DescriptiveResource(clazz.getName());
+		this.beanName = beanName;
+	}
+
+	/**
+	 * Create a new {@link ConfigurationClass} representing a class that was imported
+	 * using the {@link Import} annotation or automatically processed as a nested
+	 * configuration class (if imported is {@code true}).
+	 * @param clazz the underlying {@link Class} to represent
+	 * @param importedBy the configuration class importing this one (or {@code null})
+	 * @since 3.1.1
+	 */
+	public ConfigurationClass(Class<?> clazz, @Nullable ConfigurationClass importedBy) {
+		this.metadata = AnnotationMetadata.introspect(clazz);
+		this.resource = new DescriptiveResource(clazz.getName());
+		this.importedBy.add(importedBy);
+	}
+
+	/**
+	 * Create a new {@link ConfigurationClass} with the given name.
+	 * @param metadata the metadata for the underlying class to represent
+	 * @param beanName name of the {@code @Configuration} class bean
+	 * @see ConfigurationClass#ConfigurationClass(Class, ConfigurationClass)
+	 */
+	public ConfigurationClass(AnnotationMetadata metadata, String beanName) {
+		Assert.notNull(beanName, "Bean name must not be null");
+		this.metadata = metadata;
+		this.resource = new DescriptiveResource(metadata.getClassName());
+		this.beanName = beanName;
+	}
+
+
+	public AnnotationMetadata getMetadata() {
+		return this.metadata;
+	}
+
+	public Resource getResource() {
+		return this.resource;
+	}
+
+	public String getSimpleName() {
+		return ClassUtils.getShortName(getMetadata().getClassName());
+	}
+
+	public void setBeanName(String beanName) {
+		this.beanName = beanName;
+	}
+
+	@Nullable
+	public String getBeanName() {
+		return this.beanName;
+	}
+
+	/**
+	 * Return whether this configuration class was registered via @{@link Import} or
+	 * automatically registered due to being nested within another configuration class.
+	 * @since 3.1.1
+	 * @see #getImportedBy()
+	 */
+	public boolean isImported() {
+		return !this.importedBy.isEmpty();
+	}
+
+	/**
+	 * Merge the imported-by declarations from the given configuration class into this one.
+	 * @since 4.0.5
+	 */
+	public void mergeImportedBy(ConfigurationClass otherConfigClass) {
+		this.importedBy.addAll(otherConfigClass.importedBy);
+	}
+
+	/**
+	 * Return the configuration classes that imported this class,
+	 * or an empty Set if this configuration was not imported.
+	 * @since 4.0.5
+	 * @see #isImported()
+	 */
+	public Set<ConfigurationClass> getImportedBy() {
+		return this.importedBy;
+	}
+
+	public void addBeanMethod(BeanMethod method) {
+		this.beanMethods.add(method);
+	}
+
+	public Set<BeanMethod> getBeanMethods() {
+		return this.beanMethods;
+	}
+
+	public void addImportedResource(String importedResource, Class<? extends BeanDefinitionReader> readerClass) {
+		this.importedResources.put(importedResource, readerClass);
+	}
+
+	public void addImportBeanDefinitionRegistrar(ImportBeanDefinitionRegistrar registrar, AnnotationMetadata importingClassMetadata) {
+		this.importBeanDefinitionRegistrars.put(registrar, importingClassMetadata);
+	}
+
+	public Map<ImportBeanDefinitionRegistrar, AnnotationMetadata> getImportBeanDefinitionRegistrars() {
+		return this.importBeanDefinitionRegistrars;
+	}
+
+	public Map<String, Class<? extends BeanDefinitionReader>> getImportedResources() {
+		return this.importedResources;
+	}
+
+	public void validate(ProblemReporter problemReporter) {
+		// A configuration class may not be final (CGLIB limitation) unless it declares proxyBeanMethods=false
+		Map<String, Object> attributes = this.metadata.getAnnotationAttributes(Configuration.class.getName());
+		if (attributes != null && (Boolean) attributes.get("proxyBeanMethods")) {
+			if (this.metadata.isFinal()) {
+				problemReporter.error(new FinalConfigurationProblem());
+			}
+			for (BeanMethod beanMethod : this.beanMethods) {
+				beanMethod.validate(problemReporter);
+			}
+		}
+	}
+
+	@Override
+	public boolean equals(@Nullable Object other) {
+		return (this == other || (other instanceof ConfigurationClass &&
+				getMetadata().getClassName().equals(((ConfigurationClass) other).getMetadata().getClassName())));
+	}
+
+	@Override
+	public int hashCode() {
+		return getMetadata().getClassName().hashCode();
+	}
+
+	@Override
+	public String toString() {
+		return "ConfigurationClass: beanName '" + this.beanName + "', " + this.resource;
+	}
+
+
+	/**
+	 * Configuration classes must be non-final to accommodate CGLIB subclassing.
+	 */
+	private class FinalConfigurationProblem extends Problem {
+
+		public FinalConfigurationProblem() {
+			super(String.format("@Configuration class '%s' may not be final. Remove the final modifier to continue.",
+					getSimpleName()), new Location(getResource(), getMetadata()));
+		}
+	}
+
+}
+
+```
+
+这个类包含了我们的 @Configuration 注解：
+
+
+
+##### Configuration.java 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context.annotation;
+
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.annotation.AliasFor;
+import org.springframework.stereotype.Component;
+
+/**
+ * Indicates that a class declares one or more {@link Bean @Bean} methods and
+ * may be processed by the Spring container to generate bean definitions and
+ * service requests for those beans at runtime, for example:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * public class AppConfig {
+ *
+ *     &#064;Bean
+ *     public MyBean myBean() {
+ *         // instantiate, configure and return bean ...
+ *     }
+ * }</pre>
+ *
+ * <h2>Bootstrapping {@code @Configuration} classes</h2>
+ *
+ * <h3>Via {@code AnnotationConfigApplicationContext}</h3>
+ *
+ * <p>{@code @Configuration} classes are typically bootstrapped using either
+ * {@link AnnotationConfigApplicationContext} or its web-capable variant,
+ * {@link org.springframework.web.context.support.AnnotationConfigWebApplicationContext
+ * AnnotationConfigWebApplicationContext}. A simple example with the former follows:
+ *
+ * <pre class="code">
+ * AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
+ * ctx.register(AppConfig.class);
+ * ctx.refresh();
+ * MyBean myBean = ctx.getBean(MyBean.class);
+ * // use myBean ...
+ * </pre>
+ *
+ * <p>See the {@link AnnotationConfigApplicationContext} javadocs for further details, and see
+ * {@link org.springframework.web.context.support.AnnotationConfigWebApplicationContext
+ * AnnotationConfigWebApplicationContext} for web configuration instructions in a
+ * {@code Servlet} container.
+ *
+ * <h3>Via Spring {@code <beans>} XML</h3>
+ *
+ * <p>As an alternative to registering {@code @Configuration} classes directly against an
+ * {@code AnnotationConfigApplicationContext}, {@code @Configuration} classes may be
+ * declared as normal {@code <bean>} definitions within Spring XML files:
+ *
+ * <pre class="code">
+ * &lt;beans&gt;
+ *    &lt;context:annotation-config/&gt;
+ *    &lt;bean class="com.acme.AppConfig"/&gt;
+ * &lt;/beans&gt;
+ * </pre>
+ *
+ * <p>In the example above, {@code <context:annotation-config/>} is required in order to
+ * enable {@link ConfigurationClassPostProcessor} and other annotation-related
+ * post processors that facilitate handling {@code @Configuration} classes.
+ *
+ * <h3>Via component scanning</h3>
+ *
+ * <p>{@code @Configuration} is meta-annotated with {@link Component @Component}, therefore
+ * {@code @Configuration} classes are candidates for component scanning (typically using
+ * Spring XML's {@code <context:component-scan/>} element) and therefore may also take
+ * advantage of {@link Autowired @Autowired}/{@link javax.inject.Inject @Inject}
+ * like any regular {@code @Component}. In particular, if a single constructor is present
+ * autowiring semantics will be applied transparently for that constructor:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * public class AppConfig {
+ *
+ *     private final SomeBean someBean;
+ *
+ *     public AppConfig(SomeBean someBean) {
+ *         this.someBean = someBean;
+ *     }
+ *
+ *     // &#064;Bean definition using "SomeBean"
+ *
+ * }</pre>
+ *
+ * <p>{@code @Configuration} classes may not only be bootstrapped using
+ * component scanning, but may also themselves <em>configure</em> component scanning using
+ * the {@link ComponentScan @ComponentScan} annotation:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * &#064;ComponentScan("com.acme.app.services")
+ * public class AppConfig {
+ *     // various &#064;Bean definitions ...
+ * }</pre>
+ *
+ * <p>See the {@link ComponentScan @ComponentScan} javadocs for details.
+ *
+ * <h2>Working with externalized values</h2>
+ *
+ * <h3>Using the {@code Environment} API</h3>
+ *
+ * <p>Externalized values may be looked up by injecting the Spring
+ * {@link org.springframework.core.env.Environment} into a {@code @Configuration}
+ * class &mdash; for example, using the {@code @Autowired} annotation:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * public class AppConfig {
+ *
+ *     &#064Autowired Environment env;
+ *
+ *     &#064;Bean
+ *     public MyBean myBean() {
+ *         MyBean myBean = new MyBean();
+ *         myBean.setName(env.getProperty("bean.name"));
+ *         return myBean;
+ *     }
+ * }</pre>
+ *
+ * <p>Properties resolved through the {@code Environment} reside in one or more "property
+ * source" objects, and {@code @Configuration} classes may contribute property sources to
+ * the {@code Environment} object using the {@link PropertySource @PropertySource}
+ * annotation:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * &#064;PropertySource("classpath:/com/acme/app.properties")
+ * public class AppConfig {
+ *
+ *     &#064Inject Environment env;
+ *
+ *     &#064;Bean
+ *     public MyBean myBean() {
+ *         return new MyBean(env.getProperty("bean.name"));
+ *     }
+ * }</pre>
+ *
+ * <p>See the {@link org.springframework.core.env.Environment Environment}
+ * and {@link PropertySource @PropertySource} javadocs for further details.
+ *
+ * <h3>Using the {@code @Value} annotation</h3>
+ *
+ * <p>Externalized values may be injected into {@code @Configuration} classes using
+ * the {@link Value @Value} annotation:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * &#064;PropertySource("classpath:/com/acme/app.properties")
+ * public class AppConfig {
+ *
+ *     &#064Value("${bean.name}") String beanName;
+ *
+ *     &#064;Bean
+ *     public MyBean myBean() {
+ *         return new MyBean(beanName);
+ *     }
+ * }</pre>
+ *
+ * <p>This approach is often used in conjunction with Spring's
+ * {@link org.springframework.context.support.PropertySourcesPlaceholderConfigurer
+ * PropertySourcesPlaceholderConfigurer} that can be enabled <em>automatically</em>
+ * in XML configuration via {@code <context:property-placeholder/>} or <em>explicitly</em>
+ * in a {@code @Configuration} class via a dedicated {@code static} {@code @Bean} method
+ * (see "a note on BeanFactoryPostProcessor-returning {@code @Bean} methods" of
+ * {@link Bean @Bean}'s javadocs for details). Note, however, that explicit registration
+ * of a {@code PropertySourcesPlaceholderConfigurer} via a {@code static} {@code @Bean}
+ * method is typically only required if you need to customize configuration such as the
+ * placeholder syntax, etc. Specifically, if no bean post-processor (such as a
+ * {@code PropertySourcesPlaceholderConfigurer}) has registered an <em>embedded value
+ * resolver</em> for the {@code ApplicationContext}, Spring will register a default
+ * <em>embedded value resolver</em> which resolves placeholders against property sources
+ * registered in the {@code Environment}. See the section below on composing
+ * {@code @Configuration} classes with Spring XML using {@code @ImportResource}; see
+ * the {@link Value @Value} javadocs; and see the {@link Bean @Bean} javadocs for details
+ * on working with {@code BeanFactoryPostProcessor} types such as
+ * {@code PropertySourcesPlaceholderConfigurer}.
+ *
+ * <h2>Composing {@code @Configuration} classes</h2>
+ *
+ * <h3>With the {@code @Import} annotation</h3>
+ *
+ * <p>{@code @Configuration} classes may be composed using the {@link Import @Import} annotation,
+ * similar to the way that {@code <import>} works in Spring XML. Because
+ * {@code @Configuration} objects are managed as Spring beans within the container,
+ * imported configurations may be injected &mdash; for example, via constructor injection:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * public class DatabaseConfig {
+ *
+ *     &#064;Bean
+ *     public DataSource dataSource() {
+ *         // instantiate, configure and return DataSource
+ *     }
+ * }
+ *
+ * &#064;Configuration
+ * &#064;Import(DatabaseConfig.class)
+ * public class AppConfig {
+ *
+ *     private final DatabaseConfig dataConfig;
+ *
+ *     public AppConfig(DatabaseConfig dataConfig) {
+ *         this.dataConfig = dataConfig;
+ *     }
+ *
+ *     &#064;Bean
+ *     public MyBean myBean() {
+ *         // reference the dataSource() bean method
+ *         return new MyBean(dataConfig.dataSource());
+ *     }
+ * }</pre>
+ *
+ * <p>Now both {@code AppConfig} and the imported {@code DatabaseConfig} can be bootstrapped
+ * by registering only {@code AppConfig} against the Spring context:
+ *
+ * <pre class="code">
+ * new AnnotationConfigApplicationContext(AppConfig.class);</pre>
+ *
+ * <h3>With the {@code @Profile} annotation</h3>
+ *
+ * <p>{@code @Configuration} classes may be marked with the {@link Profile @Profile} annotation to
+ * indicate they should be processed only if a given profile or profiles are <em>active</em>:
+ *
+ * <pre class="code">
+ * &#064;Profile("development")
+ * &#064;Configuration
+ * public class EmbeddedDatabaseConfig {
+ *
+ *     &#064;Bean
+ *     public DataSource dataSource() {
+ *         // instantiate, configure and return embedded DataSource
+ *     }
+ * }
+ *
+ * &#064;Profile("production")
+ * &#064;Configuration
+ * public class ProductionDatabaseConfig {
+ *
+ *     &#064;Bean
+ *     public DataSource dataSource() {
+ *         // instantiate, configure and return production DataSource
+ *     }
+ * }</pre>
+ *
+ * <p>Alternatively, you may also declare profile conditions at the {@code @Bean} method level
+ * &mdash; for example, for alternative bean variants within the same configuration class:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * public class ProfileDatabaseConfig {
+ *
+ *     &#064;Bean("dataSource")
+ *     &#064;Profile("development")
+ *     public DataSource embeddedDatabase() { ... }
+ *
+ *     &#064;Bean("dataSource")
+ *     &#064;Profile("production")
+ *     public DataSource productionDatabase() { ... }
+ * }</pre>
+ *
+ * <p>See the {@link Profile @Profile} and {@link org.springframework.core.env.Environment}
+ * javadocs for further details.
+ *
+ * <h3>With Spring XML using the {@code @ImportResource} annotation</h3>
+ *
+ * <p>As mentioned above, {@code @Configuration} classes may be declared as regular Spring
+ * {@code <bean>} definitions within Spring XML files. It is also possible to
+ * import Spring XML configuration files into {@code @Configuration} classes using
+ * the {@link ImportResource @ImportResource} annotation. Bean definitions imported from
+ * XML can be injected &mdash; for example, using the {@code @Inject} annotation:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * &#064;ImportResource("classpath:/com/acme/database-config.xml")
+ * public class AppConfig {
+ *
+ *     &#064Inject DataSource dataSource; // from XML
+ *
+ *     &#064;Bean
+ *     public MyBean myBean() {
+ *         // inject the XML-defined dataSource bean
+ *         return new MyBean(this.dataSource);
+ *     }
+ * }</pre>
+ *
+ * <h3>With nested {@code @Configuration} classes</h3>
+ *
+ * <p>{@code @Configuration} classes may be nested within one another as follows:
+ *
+ * <pre class="code">
+ * &#064;Configuration
+ * public class AppConfig {
+ *
+ *     &#064;Inject DataSource dataSource;
+ *
+ *     &#064;Bean
+ *     public MyBean myBean() {
+ *         return new MyBean(dataSource);
+ *     }
+ *
+ *     &#064;Configuration
+ *     static class DatabaseConfig {
+ *         &#064;Bean
+ *         DataSource dataSource() {
+ *             return new EmbeddedDatabaseBuilder().build();
+ *         }
+ *     }
+ * }</pre>
+ *
+ * <p>When bootstrapping such an arrangement, only {@code AppConfig} need be registered
+ * against the application context. By virtue of being a nested {@code @Configuration}
+ * class, {@code DatabaseConfig} <em>will be registered automatically</em>. This avoids
+ * the need to use an {@code @Import} annotation when the relationship between
+ * {@code AppConfig} and {@code DatabaseConfig} is already implicitly clear.
+ *
+ * <p>Note also that nested {@code @Configuration} classes can be used to good effect
+ * with the {@code @Profile} annotation to provide two options of the same bean to the
+ * enclosing {@code @Configuration} class.
+ *
+ * <h2>Configuring lazy initialization</h2>
+ *
+ * <p>By default, {@code @Bean} methods will be <em>eagerly instantiated</em> at container
+ * bootstrap time.  To avoid this, {@code @Configuration} may be used in conjunction with
+ * the {@link Lazy @Lazy} annotation to indicate that all {@code @Bean} methods declared
+ * within the class are by default lazily initialized. Note that {@code @Lazy} may be used
+ * on individual {@code @Bean} methods as well.
+ *
+ * <h2>Testing support for {@code @Configuration} classes</h2>
+ *
+ * <p>The Spring <em>TestContext framework</em> available in the {@code spring-test} module
+ * provides the {@code @ContextConfiguration} annotation which can accept an array of
+ * <em>component class</em> references &mdash; typically {@code @Configuration} or
+ * {@code @Component} classes.
+ *
+ * <pre class="code">
+ * &#064;RunWith(SpringRunner.class)
+ * &#064;ContextConfiguration(classes = {AppConfig.class, DatabaseConfig.class})
+ * public class MyTests {
+ *
+ *     &#064;Autowired MyBean myBean;
+ *
+ *     &#064;Autowired DataSource dataSource;
+ *
+ *     &#064;Test
+ *     public void test() {
+ *         // assertions against myBean ...
+ *     }
+ * }</pre>
+ *
+ * <p>See the
+ * <a href="https://docs.spring.io/spring/docs/current/spring-framework-reference/testing.html#testcontext-framework">TestContext framework</a>
+ * reference documentation for details.
+ *
+ * <h2>Enabling built-in Spring features using {@code @Enable} annotations</h2>
+ *
+ * <p>Spring features such as asynchronous method execution, scheduled task execution,
+ * annotation driven transaction management, and even Spring MVC can be enabled and
+ * configured from {@code @Configuration} classes using their respective "{@code @Enable}"
+ * annotations. See
+ * {@link org.springframework.scheduling.annotation.EnableAsync @EnableAsync},
+ * {@link org.springframework.scheduling.annotation.EnableScheduling @EnableScheduling},
+ * {@link org.springframework.transaction.annotation.EnableTransactionManagement @EnableTransactionManagement},
+ * {@link org.springframework.context.annotation.EnableAspectJAutoProxy @EnableAspectJAutoProxy},
+ * and {@link org.springframework.web.servlet.config.annotation.EnableWebMvc @EnableWebMvc}
+ * for details.
+ *
+ * <h2>Constraints when authoring {@code @Configuration} classes</h2>
+ *
+ * <ul>
+ * <li>Configuration classes must be provided as classes (i.e. not as instances returned
+ * from factory methods), allowing for runtime enhancements through a generated subclass.
+ * <li>Configuration classes must be non-final (allowing for subclasses at runtime),
+ * unless the {@link #proxyBeanMethods() proxyBeanMethods} flag is set to {@code false}
+ * in which case no runtime-generated subclass is necessary.
+ * <li>Configuration classes must be non-local (i.e. may not be declared within a method).
+ * <li>Any nested configuration classes must be declared as {@code static}.
+ * <li>{@code @Bean} methods may not in turn create further configuration classes
+ * (any such instances will be treated as regular beans, with their configuration
+ * annotations remaining undetected).
+ * </ul>
+ *
+ * @author Rod Johnson
+ * @author Chris Beams
+ * @author Juergen Hoeller
+ * @since 3.0
+ * @see Bean
+ * @see Profile
+ * @see Import
+ * @see ImportResource
+ * @see ComponentScan
+ * @see Lazy
+ * @see PropertySource
+ * @see AnnotationConfigApplicationContext
+ 	这里有引导配置类的后置处理器
+ * @see ConfigurationClassPostProcessor
+ * @see org.springframework.core.env.Environment
+ * @see org.springframework.test.context.ContextConfiguration
+ */
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Component
+public @interface Configuration {
+
+	/**
+	 * Explicitly specify the name of the Spring bean definition associated with the
+	 * {@code @Configuration} class. If left unspecified (the common case), a bean
+	 * name will be automatically generated.
+	 * <p>The custom name applies only if the {@code @Configuration} class is picked
+	 * up via component scanning or supplied directly to an
+	 * {@link AnnotationConfigApplicationContext}. If the {@code @Configuration} class
+	 * is registered as a traditional XML bean definition, the name/id of the bean
+	 * element will take precedence.
+	 * @return the explicit component name, if any (or empty String otherwise)
+	 * @see AnnotationBeanNameGenerator
+	 */
+	@AliasFor(annotation = Component.class)
+	String value() default "";
+
+	/**
+	 * Specify whether {@code @Bean} methods should get proxied in order to enforce
+	 * bean lifecycle behavior, e.g. to return shared singleton bean instances even
+	 * in case of direct {@code @Bean} method calls in user code. This feature
+	 * requires method interception, implemented through a runtime-generated CGLIB
+	 * subclass which comes with limitations such as the configuration class and
+	 * its methods not being allowed to declare {@code final}.
+	 * <p>The default is {@code true}, allowing for 'inter-bean references' within
+	 * the configuration class as well as for external calls to this configuration's
+	 * {@code @Bean} methods, e.g. from another configuration class. If this is not
+	 * needed since each of this particular configuration's {@code @Bean} methods
+	 * is self-contained and designed as a plain factory method for container use,
+	 * switch this flag to {@code false} in order to avoid CGLIB subclass processing.
+	 * <p>Turning off bean method interception effectively processes {@code @Bean}
+	 * methods individually like when declared on non-{@code @Configuration} classes,
+	 * a.k.a. "@Bean Lite Mode" (see {@link Bean @Bean's javadoc}). It is therefore
+	 * behaviorally equivalent to removing the {@code @Configuration} stereotype.
+	 * @since 5.2
+	 */
+	boolean proxyBeanMethods() default true;
+
+}
+
+```
+
+
+
+可以看出从 Spring 3.0 开始我们用户用到的配置类注解是 @Configuration 这个注解，内部其实使用的 ConfigurationClass 这个类进行封装的。通常来说，
+
+我们标注了 @Configuration 注解的类，就成为了一个配置类。但是我们 ConfigurationClass 并不一定要标注这个 @Configuration 注解。
+
+
+
+##### ConfigurationClassPostProcessor.java 源代码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context.annotation;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import org.springframework.aop.framework.autoproxy.AutoProxyUtils;
+import org.springframework.beans.PropertyValues;
+import org.springframework.beans.factory.BeanClassLoaderAware;
+import org.springframework.beans.factory.BeanDefinitionStoreException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.config.BeanDefinitionHolder;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessorAdapter;
+import org.springframework.beans.factory.config.SingletonBeanRegistry;
+import org.springframework.beans.factory.parsing.FailFastProblemReporter;
+import org.springframework.beans.factory.parsing.PassThroughSourceExtractor;
+import org.springframework.beans.factory.parsing.ProblemReporter;
+import org.springframework.beans.factory.parsing.SourceExtractor;
+import org.springframework.beans.factory.support.AbstractBeanDefinition;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.beans.factory.support.BeanNameGenerator;
+import org.springframework.context.EnvironmentAware;
+import org.springframework.context.ResourceLoaderAware;
+import org.springframework.context.annotation.ConfigurationClassEnhancer.EnhancedConfiguration;
+import org.springframework.core.Ordered;
+import org.springframework.core.PriorityOrdered;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.ResourceLoader;
+import org.springframework.core.type.AnnotationMetadata;
+import org.springframework.core.type.MethodMetadata;
+import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
+import org.springframework.core.type.classreading.MetadataReaderFactory;
+import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
+import org.springframework.util.ClassUtils;
+
+/**
+ * {@link BeanFactoryPostProcessor} used for bootstrapping processing of
+ * {@link Configuration @Configuration} classes.
+ *
+ * <p>Registered by default when using {@code <context:annotation-config/>} or
+ * {@code <context:component-scan/>}. Otherwise, may be declared manually as
+ * with any other BeanFactoryPostProcessor.
+ *
+ * <p>This post processor is priority-ordered as it is important that any
+ * {@link Bean} methods declared in {@code @Configuration} classes have
+ * their corresponding bean definitions registered before any other
+ * {@link BeanFactoryPostProcessor} executes.
+ *
+ * @author Chris Beams
+ * @author Juergen Hoeller
+ * @author Phillip Webb
+ * @since 3.0
+ */
+public class ConfigurationClassPostProcessor implements BeanDefinitionRegistryPostProcessor,
+		PriorityOrdered, ResourceLoaderAware, BeanClassLoaderAware, EnvironmentAware {
+
+	/**
+	 * A {@code BeanNameGenerator} using fully qualified class names as default bean names.
+	 * <p>This default for configuration-level import purposes may be overridden through
+	 * {@link #setBeanNameGenerator}. Note that the default for component scanning purposes
+	 * is a plain {@link AnnotationBeanNameGenerator#INSTANCE}, unless overridden through
+	 * {@link #setBeanNameGenerator} with a unified user-level bean name generator.
+	 * @since 5.2
+	 * @see #setBeanNameGenerator
+	 */
+	public static final AnnotationBeanNameGenerator IMPORT_BEAN_NAME_GENERATOR = new AnnotationBeanNameGenerator() {
+		@Override
+		protected String buildDefaultBeanName(BeanDefinition definition) {
+			String beanClassName = definition.getBeanClassName();
+			Assert.state(beanClassName != null, "No bean class name set");
+			return beanClassName;
+		}
+	};
+
+	private static final String IMPORT_REGISTRY_BEAN_NAME =
+			ConfigurationClassPostProcessor.class.getName() + ".importRegistry";
+
+
+	private final Log logger = LogFactory.getLog(getClass());
+
+	private SourceExtractor sourceExtractor = new PassThroughSourceExtractor();
+
+	private ProblemReporter problemReporter = new FailFastProblemReporter();
+
+	@Nullable
+	private Environment environment;
+
+	private ResourceLoader resourceLoader = new DefaultResourceLoader();
+
+	@Nullable
+	private ClassLoader beanClassLoader = ClassUtils.getDefaultClassLoader();
+
+	private MetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory();
+
+	private boolean setMetadataReaderFactoryCalled = false;
+
+	private final Set<Integer> registriesPostProcessed = new HashSet<>();
+
+	private final Set<Integer> factoriesPostProcessed = new HashSet<>();
+
+	@Nullable
+	private ConfigurationClassBeanDefinitionReader reader;
+
+	private boolean localBeanNameGeneratorSet = false;
+
+	/* Using short class names as default bean names by default. */
+	private BeanNameGenerator componentScanBeanNameGenerator = AnnotationBeanNameGenerator.INSTANCE;
+
+	/* Using fully qualified class names as default bean names by default. */
+	private BeanNameGenerator importBeanNameGenerator = IMPORT_BEAN_NAME_GENERATOR;
+
+
+	@Override
+	public int getOrder() {
+		return Ordered.LOWEST_PRECEDENCE;  // within PriorityOrdered
+	}
+
+	/**
+	 * Set the {@link SourceExtractor} to use for generated bean definitions
+	 * that correspond to {@link Bean} factory methods.
+	 */
+	public void setSourceExtractor(@Nullable SourceExtractor sourceExtractor) {
+		this.sourceExtractor = (sourceExtractor != null ? sourceExtractor : new PassThroughSourceExtractor());
+	}
+
+	/**
+	 * Set the {@link ProblemReporter} to use.
+	 * <p>Used to register any problems detected with {@link Configuration} or {@link Bean}
+	 * declarations. For instance, an @Bean method marked as {@code final} is illegal
+	 * and would be reported as a problem. Defaults to {@link FailFastProblemReporter}.
+	 */
+	public void setProblemReporter(@Nullable ProblemReporter problemReporter) {
+		this.problemReporter = (problemReporter != null ? problemReporter : new FailFastProblemReporter());
+	}
+
+	/**
+	 * Set the {@link MetadataReaderFactory} to use.
+	 * <p>Default is a {@link CachingMetadataReaderFactory} for the specified
+	 * {@linkplain #setBeanClassLoader bean class loader}.
+	 */
+	public void setMetadataReaderFactory(MetadataReaderFactory metadataReaderFactory) {
+		Assert.notNull(metadataReaderFactory, "MetadataReaderFactory must not be null");
+		this.metadataReaderFactory = metadataReaderFactory;
+		this.setMetadataReaderFactoryCalled = true;
+	}
+
+	/**
+	 * Set the {@link BeanNameGenerator} to be used when triggering component scanning
+	 * from {@link Configuration} classes and when registering {@link Import}'ed
+	 * configuration classes. The default is a standard {@link AnnotationBeanNameGenerator}
+	 * for scanned components (compatible with the default in {@link ClassPathBeanDefinitionScanner})
+	 * and a variant thereof for imported configuration classes (using unique fully-qualified
+	 * class names instead of standard component overriding).
+	 * <p>Note that this strategy does <em>not</em> apply to {@link Bean} methods.
+	 * <p>This setter is typically only appropriate when configuring the post-processor as a
+	 * standalone bean definition in XML, e.g. not using the dedicated {@code AnnotationConfig*}
+	 * application contexts or the {@code <context:annotation-config>} element. Any bean name
+	 * generator specified against the application context will take precedence over any set here.
+	 * @since 3.1.1
+	 * @see AnnotationConfigApplicationContext#setBeanNameGenerator(BeanNameGenerator)
+	 * @see AnnotationConfigUtils#CONFIGURATION_BEAN_NAME_GENERATOR
+	 */
+	public void setBeanNameGenerator(BeanNameGenerator beanNameGenerator) {
+		Assert.notNull(beanNameGenerator, "BeanNameGenerator must not be null");
+		this.localBeanNameGeneratorSet = true;
+		this.componentScanBeanNameGenerator = beanNameGenerator;
+		this.importBeanNameGenerator = beanNameGenerator;
+	}
+
+	@Override
+	public void setEnvironment(Environment environment) {
+		Assert.notNull(environment, "Environment must not be null");
+		this.environment = environment;
+	}
+
+	@Override
+	public void setResourceLoader(ResourceLoader resourceLoader) {
+		Assert.notNull(resourceLoader, "ResourceLoader must not be null");
+		this.resourceLoader = resourceLoader;
+		if (!this.setMetadataReaderFactoryCalled) {
+			this.metadataReaderFactory = new CachingMetadataReaderFactory(resourceLoader);
+		}
+	}
+
+	@Override
+	public void setBeanClassLoader(ClassLoader beanClassLoader) {
+		this.beanClassLoader = beanClassLoader;
+		if (!this.setMetadataReaderFactoryCalled) {
+			this.metadataReaderFactory = new CachingMetadataReaderFactory(beanClassLoader);
+		}
+	}
+
+
+	/**
+	 * Derive further bean definitions from the configuration classes in the registry.
+	 */
+	@Override
+	public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) {
+		int registryId = System.identityHashCode(registry);
+		if (this.registriesPostProcessed.contains(registryId)) {
+			throw new IllegalStateException(
+					"postProcessBeanDefinitionRegistry already called on this post-processor against " + registry);
+		}
+		if (this.factoriesPostProcessed.contains(registryId)) {
+			throw new IllegalStateException(
+					"postProcessBeanFactory already called on this post-processor against " + registry);
+		}
+		this.registriesPostProcessed.add(registryId);
+
+		processConfigBeanDefinitions(registry);
+	}
+
+	/**
+	 * Prepare the Configuration classes for servicing bean requests at runtime
+	 * by replacing them with CGLIB-enhanced subclasses.
+	 */
+	@Override
+	public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) {
+		int factoryId = System.identityHashCode(beanFactory);
+		if (this.factoriesPostProcessed.contains(factoryId)) {
+			throw new IllegalStateException(
+					"postProcessBeanFactory already called on this post-processor against " + beanFactory);
+		}
+		this.factoriesPostProcessed.add(factoryId);
+		if (!this.registriesPostProcessed.contains(factoryId)) {
+			// BeanDefinitionRegistryPostProcessor hook apparently not supported...
+			// Simply call processConfigurationClasses lazily at this point then.
+			processConfigBeanDefinitions((BeanDefinitionRegistry) beanFactory);
+		}
+
+		enhanceConfigurationClasses(beanFactory);
+		beanFactory.addBeanPostProcessor(new ImportAwareBeanPostProcessor(beanFactory));
+	}
+
+	/**
+	 * Build and validate a configuration model based on the registry of
+	 * {@link Configuration} classes.
+	 */
+	public void processConfigBeanDefinitions(BeanDefinitionRegistry registry) {
+		List<BeanDefinitionHolder> configCandidates = new ArrayList<>();
+		String[] candidateNames = registry.getBeanDefinitionNames();
+
+		for (String beanName : candidateNames) {
+			BeanDefinition beanDef = registry.getBeanDefinition(beanName);
+			if (beanDef.getAttribute(ConfigurationClassUtils.CONFIGURATION_CLASS_ATTRIBUTE) != null) {
+				if (logger.isDebugEnabled()) {
+					logger.debug("Bean definition has already been processed as a configuration class: " + beanDef);
+				}
+			}
+			else if (ConfigurationClassUtils.checkConfigurationClassCandidate(beanDef, this.metadataReaderFactory)) {
+				configCandidates.add(new BeanDefinitionHolder(beanDef, beanName));
+			}
+		}
+
+		// Return immediately if no @Configuration classes were found
+		if (configCandidates.isEmpty()) {
+			return;
+		}
+
+		// Sort by previously determined @Order value, if applicable
+		configCandidates.sort((bd1, bd2) -> {
+			int i1 = ConfigurationClassUtils.getOrder(bd1.getBeanDefinition());
+			int i2 = ConfigurationClassUtils.getOrder(bd2.getBeanDefinition());
+			return Integer.compare(i1, i2);
+		});
+
+		// Detect any custom bean name generation strategy supplied through the enclosing application context
+		SingletonBeanRegistry sbr = null;
+		if (registry instanceof SingletonBeanRegistry) {
+			sbr = (SingletonBeanRegistry) registry;
+			if (!this.localBeanNameGeneratorSet) {
+				BeanNameGenerator generator = (BeanNameGenerator) sbr.getSingleton(
+						AnnotationConfigUtils.CONFIGURATION_BEAN_NAME_GENERATOR);
+				if (generator != null) {
+					this.componentScanBeanNameGenerator = generator;
+					this.importBeanNameGenerator = generator;
+				}
+			}
+		}
+
+		if (this.environment == null) {
+			this.environment = new StandardEnvironment();
+		}
+
+		// Parse each @Configuration class
+		ConfigurationClassParser parser = new ConfigurationClassParser(
+				this.metadataReaderFactory, this.problemReporter, this.environment,
+				this.resourceLoader, this.componentScanBeanNameGenerator, registry);
+
+		Set<BeanDefinitionHolder> candidates = new LinkedHashSet<>(configCandidates);
+		Set<ConfigurationClass> alreadyParsed = new HashSet<>(configCandidates.size());
+		do {
+			parser.parse(candidates);
+			parser.validate();
+
+			Set<ConfigurationClass> configClasses = new LinkedHashSet<>(parser.getConfigurationClasses());
+			configClasses.removeAll(alreadyParsed);
+
+			// Read the model and create bean definitions based on its content
+			if (this.reader == null) {
+				this.reader = new ConfigurationClassBeanDefinitionReader(
+						registry, this.sourceExtractor, this.resourceLoader, this.environment,
+						this.importBeanNameGenerator, parser.getImportRegistry());
+			}
+			this.reader.loadBeanDefinitions(configClasses);
+			alreadyParsed.addAll(configClasses);
+
+			candidates.clear();
+			if (registry.getBeanDefinitionCount() > candidateNames.length) {
+				String[] newCandidateNames = registry.getBeanDefinitionNames();
+				Set<String> oldCandidateNames = new HashSet<>(Arrays.asList(candidateNames));
+				Set<String> alreadyParsedClasses = new HashSet<>();
+				for (ConfigurationClass configurationClass : alreadyParsed) {
+					alreadyParsedClasses.add(configurationClass.getMetadata().getClassName());
+				}
+				for (String candidateName : newCandidateNames) {
+					if (!oldCandidateNames.contains(candidateName)) {
+						BeanDefinition bd = registry.getBeanDefinition(candidateName);
+						if (ConfigurationClassUtils.checkConfigurationClassCandidate(bd, this.metadataReaderFactory) &&
+								!alreadyParsedClasses.contains(bd.getBeanClassName())) {
+							candidates.add(new BeanDefinitionHolder(bd, candidateName));
+						}
+					}
+				}
+				candidateNames = newCandidateNames;
+			}
+		}
+		while (!candidates.isEmpty());
+
+		// Register the ImportRegistry as a bean in order to support ImportAware @Configuration classes
+		if (sbr != null && !sbr.containsSingleton(IMPORT_REGISTRY_BEAN_NAME)) {
+			sbr.registerSingleton(IMPORT_REGISTRY_BEAN_NAME, parser.getImportRegistry());
+		}
+
+		if (this.metadataReaderFactory instanceof CachingMetadataReaderFactory) {
+			// Clear cache in externally provided MetadataReaderFactory; this is a no-op
+			// for a shared cache since it'll be cleared by the ApplicationContext.
+			((CachingMetadataReaderFactory) this.metadataReaderFactory).clearCache();
+		}
+	}
+
+	/**
+	 * Post-processes a BeanFactory in search of Configuration class BeanDefinitions;
+	 * any candidates are then enhanced by a {@link ConfigurationClassEnhancer}.
+	 * Candidate status is determined by BeanDefinition attribute metadata.
+	 * @see ConfigurationClassEnhancer
+	 */
+	public void enhanceConfigurationClasses(ConfigurableListableBeanFactory beanFactory) {
+		Map<String, AbstractBeanDefinition> configBeanDefs = new LinkedHashMap<>();
+		for (String beanName : beanFactory.getBeanDefinitionNames()) {
+			BeanDefinition beanDef = beanFactory.getBeanDefinition(beanName);
+			Object configClassAttr = beanDef.getAttribute(ConfigurationClassUtils.CONFIGURATION_CLASS_ATTRIBUTE);
+			MethodMetadata methodMetadata = null;
+			if (beanDef instanceof AnnotatedBeanDefinition) {
+				methodMetadata = ((AnnotatedBeanDefinition) beanDef).getFactoryMethodMetadata();
+			}
+			if ((configClassAttr != null || methodMetadata != null) && beanDef instanceof AbstractBeanDefinition) {
+				// Configuration class (full or lite) or a configuration-derived @Bean method
+				// -> resolve bean class at this point...
+				AbstractBeanDefinition abd = (AbstractBeanDefinition) beanDef;
+				if (!abd.hasBeanClass()) {
+					try {
+						abd.resolveBeanClass(this.beanClassLoader);
+					}
+					catch (Throwable ex) {
+						throw new IllegalStateException(
+								"Cannot load configuration class: " + beanDef.getBeanClassName(), ex);
+					}
+				}
+			}
+			if (ConfigurationClassUtils.CONFIGURATION_CLASS_FULL.equals(configClassAttr)) {
+				if (!(beanDef instanceof AbstractBeanDefinition)) {
+					throw new BeanDefinitionStoreException("Cannot enhance @Configuration bean definition '" +
+							beanName + "' since it is not stored in an AbstractBeanDefinition subclass");
+				}
+				else if (logger.isInfoEnabled() && beanFactory.containsSingleton(beanName)) {
+					logger.info("Cannot enhance @Configuration bean definition '" + beanName +
+							"' since its singleton instance has been created too early. The typical cause " +
+							"is a non-static @Bean method with a BeanDefinitionRegistryPostProcessor " +
+							"return type: Consider declaring such methods as 'static'.");
+				}
+				configBeanDefs.put(beanName, (AbstractBeanDefinition) beanDef);
+			}
+		}
+		if (configBeanDefs.isEmpty()) {
+			// nothing to enhance -> return immediately
+			return;
+		}
+
+		ConfigurationClassEnhancer enhancer = new ConfigurationClassEnhancer();
+		for (Map.Entry<String, AbstractBeanDefinition> entry : configBeanDefs.entrySet()) {
+			AbstractBeanDefinition beanDef = entry.getValue();
+			// If a @Configuration class gets proxied, always proxy the target class
+			beanDef.setAttribute(AutoProxyUtils.PRESERVE_TARGET_CLASS_ATTRIBUTE, Boolean.TRUE);
+			// Set enhanced subclass of the user-specified bean class
+			Class<?> configClass = beanDef.getBeanClass();
+			Class<?> enhancedClass = enhancer.enhance(configClass, this.beanClassLoader);
+			if (configClass != enhancedClass) {
+				if (logger.isTraceEnabled()) {
+					logger.trace(String.format("Replacing bean definition '%s' existing class '%s' with " +
+							"enhanced class '%s'", entry.getKey(), configClass.getName(), enhancedClass.getName()));
+				}
+				beanDef.setBeanClass(enhancedClass);
+			}
+		}
+	}
+
+
+	private static class ImportAwareBeanPostProcessor extends InstantiationAwareBeanPostProcessorAdapter {
+
+		private final BeanFactory beanFactory;
+
+		public ImportAwareBeanPostProcessor(BeanFactory beanFactory) {
+			this.beanFactory = beanFactory;
+		}
+
+		@Override
+		public PropertyValues postProcessProperties(@Nullable PropertyValues pvs, Object bean, String beanName) {
+			// Inject the BeanFactory before AutowiredAnnotationBeanPostProcessor's
+			// postProcessProperties method attempts to autowire other configuration beans.
+			if (bean instanceof EnhancedConfiguration) {
+				((EnhancedConfiguration) bean).setBeanFactory(this.beanFactory);
+			}
+			return pvs;
+		}
+
+		@Override
+		public Object postProcessBeforeInitialization(Object bean, String beanName) {
+			if (bean instanceof ImportAware) {
+				ImportRegistry ir = this.beanFactory.getBean(IMPORT_REGISTRY_BEAN_NAME, ImportRegistry.class);
+				AnnotationMetadata importingClass = ir.getImportingClassFor(ClassUtils.getUserClass(bean).getName());
+				if (importingClass != null) {
+					((ImportAware) bean).setImportMetadata(importingClass);
+				}
+			}
+			return bean;
+		}
+	}
+
+}
+
+```
+
+这里临时先有个印象，后面会细说。这里简要说一点启发性的东西。这个 ConfigurationClassPostProcessor 类实现了 BeanDefinitionRegistryPostProcessor，
+
+这个 BeanDefinitionRegistryPostProcessor 其实就是扩展了我们 BeanFactoryPostProcessor 的实现。
+
+
+
+##### BeanDefinitionPostProcessor.java 源码：
+
+```java
+/*
+ * Copyright 2002-2010 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.support;
+
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+
+/**
+ * Extension to the standard {@link BeanFactoryPostProcessor} SPI, allowing for
+ * the registration of further bean definitions <i>before</i> regular
+ * BeanFactoryPostProcessor detection kicks in. In particular,
+ * BeanDefinitionRegistryPostProcessor may register further bean definitions
+ * which in turn define BeanFactoryPostProcessor instances.
+ *
+ * @author Juergen Hoeller
+ * @since 3.0.1
+ * @see org.springframework.context.annotation.ConfigurationClassPostProcessor
+ */
+public interface BeanDefinitionRegistryPostProcessor extends BeanFactoryPostProcessor {
+
+	/**
+	 * Modify the application context's internal bean definition registry after its
+	 * standard initialization. All regular bean definitions will have been loaded,
+	 * but no beans will have been instantiated yet. This allows for adding further
+	 * bean definitions before the next post-processing phase kicks in.
+	 * @param registry the bean definition registry used by the application context
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 */
+	void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException;
+
+}
+
+```
+
+
+
+##### BeanFactoryPostProcessor.java 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.config;
+
+import org.springframework.beans.BeansException;
+
+/**
+ * Factory hook that allows for custom modification of an application context's
+ * bean definitions, adapting the bean property values of the context's underlying
+ * bean factory.
+ *
+ * <p>Useful for custom config files targeted at system administrators that
+ * override bean properties configured in the application context. See
+ * {@link PropertyResourceConfigurer} and its concrete implementations for
+ * out-of-the-box solutions that address such configuration needs.
+ *
+ * <p>A {@code BeanFactoryPostProcessor} may interact with and modify bean
+ * definitions, but never bean instances. Doing so may cause premature bean
+ * instantiation, violating the container and causing unintended side-effects.
+ * If bean instance interaction is required, consider implementing
+ * {@link BeanPostProcessor} instead.
+ *
+ * <h3>Registration</h3>
+ * <p>An {@code ApplicationContext} auto-detects {@code BeanFactoryPostProcessor}
+ * beans in its bean definitions and applies them before any other beans get created.
+ * A {@code BeanFactoryPostProcessor} may also be registered programmatically
+ * with a {@code ConfigurableApplicationContext}.
+ *
+ * <h3>Ordering</h3>
+ * <p>{@code BeanFactoryPostProcessor} beans that are autodetected in an
+ * {@code ApplicationContext} will be ordered according to
+ * {@link org.springframework.core.PriorityOrdered} and
+ * {@link org.springframework.core.Ordered} semantics. In contrast,
+ * {@code BeanFactoryPostProcessor} beans that are registered programmatically
+ * with a {@code ConfigurableApplicationContext} will be applied in the order of
+ * registration; any ordering semantics expressed through implementing the
+ * {@code PriorityOrdered} or {@code Ordered} interface will be ignored for
+ * programmatically registered post-processors. Furthermore, the
+ * {@link org.springframework.core.annotation.Order @Order} annotation is not
+ * taken into account for {@code BeanFactoryPostProcessor} beans.
+ *
+ * @author Juergen Hoeller
+ * @author Sam Brannen
+ * @since 06.07.2003
+ * @see BeanPostProcessor
+ * @see PropertyResourceConfigurer
+ */
+@FunctionalInterface
+public interface BeanFactoryPostProcessor {
+
+	/**
+	 * Modify the application context's internal bean factory after its standard
+	 * initialization. All bean definitions will have been loaded, but no beans
+	 * will have been instantiated yet. This allows for overriding or adding
+	 * properties even to eager-initializing beans.
+	 * @param beanFactory the bean factory used by the application context
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 */
+	void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException;
+
+}
+
+```
+
+
+
+可以简单看出 ConfigurationClassPostProcessor 可以说是一个 Bean 或者说是 Spring IoC 容器生命周期的回调。这里就是为了处理我们的一些生命周期逻辑，
+
+但是实现是真的复杂。。。后面有机会深入说一下。
+
+
+
+AutowiredAnnotationBeanPostProcessor 基本上就是一个生命周期的回调，或者说是后置处理。他处理了两个东西，一个是 @Autowired @Value
+
+```java
+/**
+	 * Create a new {@code AutowiredAnnotationBeanPostProcessor} for Spring's
+	 * standard {@link Autowired @Autowired} and {@link Value @Value} annotations.
+	 * <p>Also supports JSR-330's {@link javax.inject.Inject @Inject} annotation,
+	 * if available.
+	 */
+	@SuppressWarnings("unchecked")
+	public AutowiredAnnotationBeanPostProcessor() {
+		this.autowiredAnnotationTypes.add(Autowired.class);
+		this.autowiredAnnotationTypes.add(Value.class);
+		try {
+			this.autowiredAnnotationTypes.add((Class<? extends Annotation>)
+					ClassUtils.forName("javax.inject.Inject", AutowiredAnnotationBeanPostProcessor.class.getClassLoader()));
+			logger.trace("JSR-330 'javax.inject.Inject' annotation found and supported for autowiring");
+		}
+		catch (ClassNotFoundException ex) {
+			// JSR-330 API not available - simply skip.
+		}
+	}
+```
+
+意思就是注入的对象可能是一个 Spring Bean 也可能是一个可依赖的对象，再者就是外部化配置的属性。例如：@Value 就是一个外部化配置属性的一个注入。
+
+当然 @Value 里面暗含了一些**属性转换**的能力。
+
+根据 **AutowiredAnnotationPostProcessor** 的继承关系，我们可以看出他就是一个普通的 BeanPostProcessor ，继承了
+
+**InstantiationAwareBeanPostProcessorAdaptor** 这个类，这是一个适配器，同时他又是一个 BeanPostProcessor 。
+
+
+
+##### InstantiationAwareBeanPostProcessorAdaptor.java 源码：
+
+```java
+/*
+ * Copyright 2002-2018 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.config;
+
+import java.beans.PropertyDescriptor;
+import java.lang.reflect.Constructor;
+
+import org.springframework.beans.BeansException;
+import org.springframework.beans.PropertyValues;
+import org.springframework.lang.Nullable;
+
+/**
+ * Adapter that implements all methods on {@link SmartInstantiationAwareBeanPostProcessor}
+ * as no-ops, which will not change normal processing of each bean instantiated
+ * by the container. Subclasses may override merely those methods that they are
+ * actually interested in.
+ *
+ * <p>Note that this base class is only recommendable if you actually require
+ * {@link InstantiationAwareBeanPostProcessor} functionality. If all you need
+ * is plain {@link BeanPostProcessor} functionality, prefer a straight
+ * implementation of that (simpler) interface.
+ *
+ * @author Rod Johnson
+ * @author Juergen Hoeller
+ * @since 2.0
+ */
+public abstract class InstantiationAwareBeanPostProcessorAdapter implements SmartInstantiationAwareBeanPostProcessor {
+
+	@Override
+	@Nullable
+	public Class<?> predictBeanType(Class<?> beanClass, String beanName) throws BeansException {
+		return null;
+	}
+
+	@Override
+	@Nullable
+	public Constructor<?>[] determineCandidateConstructors(Class<?> beanClass, String beanName) throws BeansException {
+		return null;
+	}
+
+	@Override
+	public Object getEarlyBeanReference(Object bean, String beanName) throws BeansException {
+		return bean;
+	}
+
+	@Override
+	@Nullable
+	public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
+		return null;
+	}
+
+	@Override
+	public boolean postProcessAfterInstantiation(Object bean, String beanName) throws BeansException {
+		return true;
+	}
+
+	@Override
+	public PropertyValues postProcessProperties(PropertyValues pvs, Object bean, String beanName)
+			throws BeansException {
+
+		return null;
+	}
+
+	@Deprecated
+	@Override
+	public PropertyValues postProcessPropertyValues(
+			PropertyValues pvs, PropertyDescriptor[] pds, Object bean, String beanName) throws BeansException {
+
+		return pvs;
+	}
+
+	@Override
+	public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+		return bean;
+	}
+
+	@Override
+	public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+		return bean;
+	}
+
+}
+
+```
+
+
+
+可以看出 InstantiationPostBeanProcessorAdaptor 是一个 抽象类，里面实现了 SmartInstantiationAwareBeanPostProcessor 这个接口。
+
+
+
+##### SmartInstantiationAwareBeanPostProcessor.java 源码：
+
+```java
+/*
+ * Copyright 2002-2016 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.config;
+
+import java.lang.reflect.Constructor;
+
+import org.springframework.beans.BeansException;
+import org.springframework.lang.Nullable;
+
+/**
+ * Extension of the {@link InstantiationAwareBeanPostProcessor} interface,
+ * adding a callback for predicting the eventual type of a processed bean.
+ *
+ * <p><b>NOTE:</b> This interface is a special purpose interface, mainly for
+ * internal use within the framework. In general, application-provided
+ * post-processors should simply implement the plain {@link BeanPostProcessor}
+ * interface or derive from the {@link InstantiationAwareBeanPostProcessorAdapter}
+ * class. New methods might be added to this interface even in point releases.
+ *
+ * @author Juergen Hoeller
+ * @since 2.0.3
+ * @see InstantiationAwareBeanPostProcessorAdapter
+ */
+public interface SmartInstantiationAwareBeanPostProcessor extends InstantiationAwareBeanPostProcessor {
+
+	/**
+	 * Predict the type of the bean to be eventually returned from this
+	 * processor's {@link #postProcessBeforeInstantiation} callback.
+	 * <p>The default implementation returns {@code null}.
+	 * @param beanClass the raw class of the bean
+	 * @param beanName the name of the bean
+	 * @return the type of the bean, or {@code null} if not predictable
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 */
+	@Nullable
+	default Class<?> predictBeanType(Class<?> beanClass, String beanName) throws BeansException {
+		return null;
+	}
+
+	/**
+	 * Determine the candidate constructors to use for the given bean.
+	 * <p>The default implementation returns {@code null}.
+	 * @param beanClass the raw class of the bean (never {@code null})
+	 * @param beanName the name of the bean
+	 * @return the candidate constructors, or {@code null} if none specified
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 */
+	@Nullable
+	default Constructor<?>[] determineCandidateConstructors(Class<?> beanClass, String beanName)
+			throws BeansException {
+
+		return null;
+	}
+
+	/**
+	 * Obtain a reference for early access to the specified bean,
+	 * typically for the purpose of resolving a circular reference.
+	 * <p>This callback gives post-processors a chance to expose a wrapper
+	 * early - that is, before the target bean instance is fully initialized.
+	 * The exposed object should be equivalent to the what
+	 * {@link #postProcessBeforeInitialization} / {@link #postProcessAfterInitialization}
+	 * would expose otherwise. Note that the object returned by this method will
+	 * be used as bean reference unless the post-processor returns a different
+	 * wrapper from said post-process callbacks. In other words: Those post-process
+	 * callbacks may either eventually expose the same reference or alternatively
+	 * return the raw bean instance from those subsequent callbacks (if the wrapper
+	 * for the affected bean has been built for a call to this method already,
+	 * it will be exposes as final bean reference by default).
+	 * <p>The default implementation returns the given {@code bean} as-is.
+	 * @param bean the raw bean instance
+	 * @param beanName the name of the bean
+	 * @return the object to expose as bean reference
+	 * (typically with the passed-in bean instance as default)
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 */
+	default Object getEarlyBeanReference(Object bean, String beanName) throws BeansException {
+		return bean;
+	}
+
+}
+
+```
+
+
+
+SmartInstantiationAwreaBeanPostProcessor 接口又继承了 InstantiationAwreaBeanPostProcessor 这个接口
+
+
+
+##### InstantiationAwraeBeanPostProcessor.java 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.config;
+
+import java.beans.PropertyDescriptor;
+
+import org.springframework.beans.BeansException;
+import org.springframework.beans.PropertyValues;
+import org.springframework.lang.Nullable;
+
+/**
+ * Subinterface of {@link BeanPostProcessor} that adds a before-instantiation callback,
+ * and a callback after instantiation but before explicit properties are set or
+ * autowiring occurs.
+ *
+ * <p>Typically used to suppress default instantiation for specific target beans,
+ * for example to create proxies with special TargetSources (pooling targets,
+ * lazily initializing targets, etc), or to implement additional injection strategies
+ * such as field injection.
+ *
+ * <p><b>NOTE:</b> This interface is a special purpose interface, mainly for
+ * internal use within the framework. It is recommended to implement the plain
+ * {@link BeanPostProcessor} interface as far as possible, or to derive from
+ * {@link InstantiationAwareBeanPostProcessorAdapter} in order to be shielded
+ * from extensions to this interface.
+ *
+ * @author Juergen Hoeller
+ * @author Rod Johnson
+ * @since 1.2
+ * @see org.springframework.aop.framework.autoproxy.AbstractAutoProxyCreator#setCustomTargetSourceCreators
+ * @see org.springframework.aop.framework.autoproxy.target.LazyInitTargetSourceCreator
+ */
+public interface InstantiationAwareBeanPostProcessor extends BeanPostProcessor {
+
+	/**
+	 * Apply this BeanPostProcessor <i>before the target bean gets instantiated</i>.
+	 * The returned bean object may be a proxy to use instead of the target bean,
+	 * effectively suppressing default instantiation of the target bean.
+	 * <p>If a non-null object is returned by this method, the bean creation process
+	 * will be short-circuited. The only further processing applied is the
+	 * {@link #postProcessAfterInitialization} callback from the configured
+	 * {@link BeanPostProcessor BeanPostProcessors}.
+	 * <p>This callback will be applied to bean definitions with their bean class,
+	 * as well as to factory-method definitions in which case the returned bean type
+	 * will be passed in here.
+	 * <p>Post-processors may implement the extended
+	 * {@link SmartInstantiationAwareBeanPostProcessor} interface in order
+	 * to predict the type of the bean object that they are going to return here.
+	 * <p>The default implementation returns {@code null}.
+	 * @param beanClass the class of the bean to be instantiated
+	 * @param beanName the name of the bean
+	 * @return the bean object to expose instead of a default instance of the target bean,
+	 * or {@code null} to proceed with default instantiation
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see #postProcessAfterInstantiation
+	 * @see org.springframework.beans.factory.support.AbstractBeanDefinition#getBeanClass()
+	 * @see org.springframework.beans.factory.support.AbstractBeanDefinition#getFactoryMethodName()
+	 */
+	@Nullable
+	default Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
+		return null;
+	}
+
+	/**
+	 * Perform operations after the bean has been instantiated, via a constructor or factory method,
+	 * but before Spring property population (from explicit properties or autowiring) occurs.
+	 * <p>This is the ideal callback for performing custom field injection on the given bean
+	 * instance, right before Spring's autowiring kicks in.
+	 * <p>The default implementation returns {@code true}.
+	 * @param bean the bean instance created, with properties not having been set yet
+	 * @param beanName the name of the bean
+	 * @return {@code true} if properties should be set on the bean; {@code false}
+	 * if property population should be skipped. Normal implementations should return {@code true}.
+	 * Returning {@code false} will also prevent any subsequent InstantiationAwareBeanPostProcessor
+	 * instances being invoked on this bean instance.
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see #postProcessBeforeInstantiation
+	 */
+	default boolean postProcessAfterInstantiation(Object bean, String beanName) throws BeansException {
+		return true;
+	}
+
+	/**
+	 * Post-process the given property values before the factory applies them
+	 * to the given bean, without any need for property descriptors.
+	 * <p>Implementations should return {@code null} (the default) if they provide a custom
+	 * {@link #postProcessPropertyValues} implementation, and {@code pvs} otherwise.
+	 * In a future version of this interface (with {@link #postProcessPropertyValues} removed),
+	 * the default implementation will return the given {@code pvs} as-is directly.
+	 * @param pvs the property values that the factory is about to apply (never {@code null})
+	 * @param bean the bean instance created, but whose properties have not yet been set
+	 * @param beanName the name of the bean
+	 * @return the actual property values to apply to the given bean (can be the passed-in
+	 * PropertyValues instance), or {@code null} which proceeds with the existing properties
+	 * but specifically continues with a call to {@link #postProcessPropertyValues}
+	 * (requiring initialized {@code PropertyDescriptor}s for the current bean class)
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @since 5.1
+	 * @see #postProcessPropertyValues
+	 */
+	@Nullable
+	default PropertyValues postProcessProperties(PropertyValues pvs, Object bean, String beanName)
+			throws BeansException {
+
+		return null;
+	}
+
+	/**
+	 * Post-process the given property values before the factory applies them
+	 * to the given bean. Allows for checking whether all dependencies have been
+	 * satisfied, for example based on a "Required" annotation on bean property setters.
+	 * <p>Also allows for replacing the property values to apply, typically through
+	 * creating a new MutablePropertyValues instance based on the original PropertyValues,
+	 * adding or removing specific values.
+	 * <p>The default implementation returns the given {@code pvs} as-is.
+	 * @param pvs the property values that the factory is about to apply (never {@code null})
+	 * @param pds the relevant property descriptors for the target bean (with ignored
+	 * dependency types - which the factory handles specifically - already filtered out)
+	 * @param bean the bean instance created, but whose properties have not yet been set
+	 * @param beanName the name of the bean
+	 * @return the actual property values to apply to the given bean (can be the passed-in
+	 * PropertyValues instance), or {@code null} to skip property population
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see #postProcessProperties
+	 * @see org.springframework.beans.MutablePropertyValues
+	 * @deprecated as of 5.1, in favor of {@link #postProcessProperties(PropertyValues, Object, String)}
+	 */
+	@Deprecated
+	@Nullable
+	default PropertyValues postProcessPropertyValues(
+			PropertyValues pvs, PropertyDescriptor[] pds, Object bean, String beanName) throws BeansException {
+
+		return pvs;
+	}
+
+}
+
+```
+
+
+
+InstantiationAwreaBeanPostProcessor 这个接口又继承了 BeanPostProcessor。
+
+
+
+##### BeanPostProcssor.java 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.config;
+
+import org.springframework.beans.BeansException;
+import org.springframework.lang.Nullable;
+
+/**
+ * Factory hook that allows for custom modification of new bean instances &mdash;
+ * for example, checking for marker interfaces or wrapping beans with proxies.
+ *
+ * <p>Typically, post-processors that populate beans via marker interfaces
+ * or the like will implement {@link #postProcessBeforeInitialization},
+ * while post-processors that wrap beans with proxies will normally
+ * implement {@link #postProcessAfterInitialization}.
+ *
+ * <h3>Registration</h3>
+ * <p>An {@code ApplicationContext} can autodetect {@code BeanPostProcessor} beans
+ * in its bean definitions and apply those post-processors to any beans subsequently
+ * created. A plain {@code BeanFactory} allows for programmatic registration of
+ * post-processors, applying them to all beans created through the bean factory.
+ *
+ * <h3>Ordering</h3>
+ * <p>{@code BeanPostProcessor} beans that are autodetected in an
+ * {@code ApplicationContext} will be ordered according to
+ * {@link org.springframework.core.PriorityOrdered} and
+ * {@link org.springframework.core.Ordered} semantics. In contrast,
+ * {@code BeanPostProcessor} beans that are registered programmatically with a
+ * {@code BeanFactory} will be applied in the order of registration; any ordering
+ * semantics expressed through implementing the
+ * {@code PriorityOrdered} or {@code Ordered} interface will be ignored for
+ * programmatically registered post-processors. Furthermore, the
+ * {@link org.springframework.core.annotation.Order @Order} annotation is not
+ * taken into account for {@code BeanPostProcessor} beans.
+ *
+ * @author Juergen Hoeller
+ * @author Sam Brannen
+ * @since 10.10.2003
+ * @see InstantiationAwareBeanPostProcessor
+ * @see DestructionAwareBeanPostProcessor
+ * @see ConfigurableBeanFactory#addBeanPostProcessor
+ * @see BeanFactoryPostProcessor
+ */
+public interface BeanPostProcessor {
+
+	/**
+	 * Apply this {@code BeanPostProcessor} to the given new bean instance <i>before</i> any bean
+	 * initialization callbacks (like InitializingBean's {@code afterPropertiesSet}
+	 * or a custom init-method). The bean will already be populated with property values.
+	 * The returned bean instance may be a wrapper around the original.
+	 * <p>The default implementation returns the given {@code bean} as-is.
+	 * @param bean the new bean instance
+	 * @param beanName the name of the bean
+	 * @return the bean instance to use, either the original or a wrapped one;
+	 * if {@code null}, no subsequent BeanPostProcessors will be invoked
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see org.springframework.beans.factory.InitializingBean#afterPropertiesSet
+	 */
+	@Nullable
+	default Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+		return bean;
+	}
+
+	/**
+	 * Apply this {@code BeanPostProcessor} to the given new bean instance <i>after</i> any bean
+	 * initialization callbacks (like InitializingBean's {@code afterPropertiesSet}
+	 * or a custom init-method). The bean will already be populated with property values.
+	 * The returned bean instance may be a wrapper around the original.
+	 * <p>In case of a FactoryBean, this callback will be invoked for both the FactoryBean
+	 * instance and the objects created by the FactoryBean (as of Spring 2.0). The
+	 * post-processor can decide whether to apply to either the FactoryBean or created
+	 * objects or both through corresponding {@code bean instanceof FactoryBean} checks.
+	 * <p>This callback will also be invoked after a short-circuiting triggered by a
+	 * {@link InstantiationAwareBeanPostProcessor#postProcessBeforeInstantiation} method,
+	 * in contrast to all other {@code BeanPostProcessor} callbacks.
+	 * <p>The default implementation returns the given {@code bean} as-is.
+	 * @param bean the new bean instance
+	 * @param beanName the name of the bean
+	 * @return the bean instance to use, either the original or a wrapped one;
+	 * if {@code null}, no subsequent BeanPostProcessors will be invoked
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see org.springframework.beans.factory.InitializingBean#afterPropertiesSet
+	 * @see org.springframework.beans.factory.FactoryBean
+	 */
+	@Nullable
+	default Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+		return bean;
+	}
+
+}
+
+```
+
+
+
+因此我们可以得出结论：InstantiationAweraBeanPostProcessorAdaptor 他就是一个 BeanPostProcessor 的接口实现。
+
+问：那么 InstantiationAwreaBeanPostProcessorAdaptor 为什么要用这个适配器的方式？
+
+答：因为有些代码不需要进行完全的实现，按需实现就好了。。。
+
+
+
+
+
+CommonAnnotationBeanPostProcessor 也是一个 Bean 的后置处理，CommonAnnotation 代表的是需要**有条件激活**的。为什么会有条件激活？后面再说。
+
+CommonAnnotationBeanPostProcessor 存在的意义是为了 处理 JSR-250 这类的注解。我们之前用到过 @PostConstract、@Destory 这类的注解对初始化的
+
+属性或者对象进行一系列初始化之前做什么事情，初始化之后做什么事情。
+
+
+
+##### CommonAnnotationBeanPostProcessor 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context.annotation;
+
+import java.beans.Introspector;
+import java.beans.PropertyDescriptor;
+import java.io.Serializable;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Member;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+import javax.annotation.Resource;
+import javax.ejb.EJB;
+import javax.xml.namespace.QName;
+import javax.xml.ws.Service;
+import javax.xml.ws.WebServiceClient;
+import javax.xml.ws.WebServiceRef;
+
+import org.springframework.aop.TargetSource;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.PropertyValues;
+import org.springframework.beans.factory.BeanCreationException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor;
+import org.springframework.beans.factory.annotation.InjectionMetadata;
+import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
+import org.springframework.beans.factory.config.ConfigurableBeanFactory;
+import org.springframework.beans.factory.config.DependencyDescriptor;
+import org.springframework.beans.factory.config.EmbeddedValueResolver;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.core.BridgeMethodResolver;
+import org.springframework.core.MethodParameter;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.AnnotationUtils;
+import org.springframework.jndi.support.SimpleJndiBeanFactory;
+import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
+import org.springframework.util.ClassUtils;
+import org.springframework.util.ReflectionUtils;
+import org.springframework.util.StringUtils;
+import org.springframework.util.StringValueResolver;
+
+/**
+ * {@link org.springframework.beans.factory.config.BeanPostProcessor} implementation
+ * that supports common Java annotations out of the box, in particular the JSR-250
+ * annotations in the {@code javax.annotation} package. These common Java
+ * annotations are supported in many Java EE 5 technologies (e.g. JSF 1.2),
+ * as well as in Java 6's JAX-WS.
+ *
+ * <p>This post-processor includes support for the {@link javax.annotation.PostConstruct}
+ * and {@link javax.annotation.PreDestroy} annotations - as init annotation
+ * and destroy annotation, respectively - through inheriting from
+ * {@link InitDestroyAnnotationBeanPostProcessor} with pre-configured annotation types.
+ *
+ * <p>The central element is the {@link javax.annotation.Resource} annotation
+ * for annotation-driven injection of named beans, by default from the containing
+ * Spring BeanFactory, with only {@code mappedName} references resolved in JNDI.
+ * The {@link #setAlwaysUseJndiLookup "alwaysUseJndiLookup" flag} enforces JNDI lookups
+ * equivalent to standard Java EE 5 resource injection for {@code name} references
+ * and default names as well. The target beans can be simple POJOs, with no special
+ * requirements other than the type having to match.
+ *
+ * <p>The JAX-WS {@link javax.xml.ws.WebServiceRef} annotation is supported too,
+ * analogous to {@link javax.annotation.Resource} but with the capability of creating
+ * specific JAX-WS service endpoints. This may either point to an explicitly defined
+ * resource by name or operate on a locally specified JAX-WS service class. Finally,
+ * this post-processor also supports the EJB 3 {@link javax.ejb.EJB} annotation,
+ * analogous to {@link javax.annotation.Resource} as well, with the capability to
+ * specify both a local bean name and a global JNDI name for fallback retrieval.
+ * The target beans can be plain POJOs as well as EJB 3 Session Beans in this case.
+ *
+ * <p>The common annotations supported by this post-processor are available in
+ * Java 6 (JDK 1.6) as well as in Java EE 5/6 (which provides a standalone jar for
+ * its common annotations as well, allowing for use in any Java 5 based application).
+ *
+ * <p>For default usage, resolving resource names as Spring bean names,
+ * simply define the following in your application context:
+ *
+ * <pre class="code">
+ * &lt;bean class="org.springframework.context.annotation.CommonAnnotationBeanPostProcessor"/&gt;</pre>
+ *
+ * For direct JNDI access, resolving resource names as JNDI resource references
+ * within the Java EE application's "java:comp/env/" namespace, use the following:
+ *
+ * <pre class="code">
+ * &lt;bean class="org.springframework.context.annotation.CommonAnnotationBeanPostProcessor"&gt;
+ *   &lt;property name="alwaysUseJndiLookup" value="true"/&gt;
+ * &lt;/bean&gt;</pre>
+ *
+ * {@code mappedName} references will always be resolved in JNDI,
+ * allowing for global JNDI names (including "java:" prefix) as well. The
+ * "alwaysUseJndiLookup" flag just affects {@code name} references and
+ * default names (inferred from the field name / property name).
+ *
+ * <p><b>NOTE:</b> A default CommonAnnotationBeanPostProcessor will be registered
+ * by the "context:annotation-config" and "context:component-scan" XML tags.
+ * Remove or turn off the default annotation configuration there if you intend
+ * to specify a custom CommonAnnotationBeanPostProcessor bean definition!
+ * <p><b>NOTE:</b> Annotation injection will be performed <i>before</i> XML injection; thus
+ * the latter configuration will override the former for properties wired through
+ * both approaches.
+ *
+ * @author Juergen Hoeller
+ * @since 2.5
+ * @see #setAlwaysUseJndiLookup
+ * @see #setResourceFactory
+ * @see org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor
+ * @see org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor
+ */
+@SuppressWarnings("serial")
+public class CommonAnnotationBeanPostProcessor extends InitDestroyAnnotationBeanPostProcessor
+		implements InstantiationAwareBeanPostProcessor, BeanFactoryAware, Serializable {
+
+	@Nullable
+	private static Class<? extends Annotation> webServiceRefClass;
+
+	@Nullable
+	private static Class<? extends Annotation> ejbRefClass;
+
+	private static Set<Class<? extends Annotation>> resourceAnnotationTypes = new LinkedHashSet<>(4);
+
+	static {
+		try {
+			@SuppressWarnings("unchecked")
+			Class<? extends Annotation> clazz = (Class<? extends Annotation>)
+					ClassUtils.forName("javax.xml.ws.WebServiceRef", CommonAnnotationBeanPostProcessor.class.getClassLoader());
+			webServiceRefClass = clazz;
+		}
+		catch (ClassNotFoundException ex) {
+			webServiceRefClass = null;
+		}
+
+		try {
+			@SuppressWarnings("unchecked")
+			Class<? extends Annotation> clazz = (Class<? extends Annotation>)
+					ClassUtils.forName("javax.ejb.EJB", CommonAnnotationBeanPostProcessor.class.getClassLoader());
+			ejbRefClass = clazz;
+		}
+		catch (ClassNotFoundException ex) {
+			ejbRefClass = null;
+		}
+
+		resourceAnnotationTypes.add(Resource.class);
+		if (webServiceRefClass != null) {
+			resourceAnnotationTypes.add(webServiceRefClass);
+		}
+		if (ejbRefClass != null) {
+			resourceAnnotationTypes.add(ejbRefClass);
+		}
+	}
+
+
+	private final Set<String> ignoredResourceTypes = new HashSet<>(1);
+
+	private boolean fallbackToDefaultTypeMatch = true;
+
+	private boolean alwaysUseJndiLookup = false;
+
+	private transient BeanFactory jndiFactory = new SimpleJndiBeanFactory();
+
+	@Nullable
+	private transient BeanFactory resourceFactory;
+
+	@Nullable
+	private transient BeanFactory beanFactory;
+
+	@Nullable
+	private transient StringValueResolver embeddedValueResolver;
+
+	private final transient Map<String, InjectionMetadata> injectionMetadataCache = new ConcurrentHashMap<>(256);
+
+
+	/**
+	 * Create a new CommonAnnotationBeanPostProcessor,
+	 * with the init and destroy annotation types set to
+	 * {@link javax.annotation.PostConstruct} and {@link javax.annotation.PreDestroy},
+	 * respectively.
+	 */
+	public CommonAnnotationBeanPostProcessor() {
+		setOrder(Ordered.LOWEST_PRECEDENCE - 3);
+		setInitAnnotationType(PostConstruct.class);
+		setDestroyAnnotationType(PreDestroy.class);
+		ignoreResourceType("javax.xml.ws.WebServiceContext");
+	}
+
+
+	/**
+	 * Ignore the given resource type when resolving {@code @Resource}
+	 * annotations.
+	 * <p>By default, the {@code javax.xml.ws.WebServiceContext} interface
+	 * will be ignored, since it will be resolved by the JAX-WS runtime.
+	 * @param resourceType the resource type to ignore
+	 */
+	public void ignoreResourceType(String resourceType) {
+		Assert.notNull(resourceType, "Ignored resource type must not be null");
+		this.ignoredResourceTypes.add(resourceType);
+	}
+
+	/**
+	 * Set whether to allow a fallback to a type match if no explicit name has been
+	 * specified. The default name (i.e. the field name or bean property name) will
+	 * still be checked first; if a bean of that name exists, it will be taken.
+	 * However, if no bean of that name exists, a by-type resolution of the
+	 * dependency will be attempted if this flag is "true".
+	 * <p>Default is "true". Switch this flag to "false" in order to enforce a
+	 * by-name lookup in all cases, throwing an exception in case of no name match.
+	 * @see org.springframework.beans.factory.config.AutowireCapableBeanFactory#resolveDependency
+	 */
+	public void setFallbackToDefaultTypeMatch(boolean fallbackToDefaultTypeMatch) {
+		this.fallbackToDefaultTypeMatch = fallbackToDefaultTypeMatch;
+	}
+
+	/**
+	 * Set whether to always use JNDI lookups equivalent to standard Java EE 5 resource
+	 * injection, <b>even for {@code name} attributes and default names</b>.
+	 * <p>Default is "false": Resource names are used for Spring bean lookups in the
+	 * containing BeanFactory; only {@code mappedName} attributes point directly
+	 * into JNDI. Switch this flag to "true" for enforcing Java EE style JNDI lookups
+	 * in any case, even for {@code name} attributes and default names.
+	 * @see #setJndiFactory
+	 * @see #setResourceFactory
+	 */
+	public void setAlwaysUseJndiLookup(boolean alwaysUseJndiLookup) {
+		this.alwaysUseJndiLookup = alwaysUseJndiLookup;
+	}
+
+	/**
+	 * Specify the factory for objects to be injected into {@code @Resource} /
+	 * {@code @WebServiceRef} / {@code @EJB} annotated fields and setter methods,
+	 * <b>for {@code mappedName} attributes that point directly into JNDI</b>.
+	 * This factory will also be used if "alwaysUseJndiLookup" is set to "true" in order
+	 * to enforce JNDI lookups even for {@code name} attributes and default names.
+	 * <p>The default is a {@link org.springframework.jndi.support.SimpleJndiBeanFactory}
+	 * for JNDI lookup behavior equivalent to standard Java EE 5 resource injection.
+	 * @see #setResourceFactory
+	 * @see #setAlwaysUseJndiLookup
+	 */
+	public void setJndiFactory(BeanFactory jndiFactory) {
+		Assert.notNull(jndiFactory, "BeanFactory must not be null");
+		this.jndiFactory = jndiFactory;
+	}
+
+	/**
+	 * Specify the factory for objects to be injected into {@code @Resource} /
+	 * {@code @WebServiceRef} / {@code @EJB} annotated fields and setter methods,
+	 * <b>for {@code name} attributes and default names</b>.
+	 * <p>The default is the BeanFactory that this post-processor is defined in,
+	 * if any, looking up resource names as Spring bean names. Specify the resource
+	 * factory explicitly for programmatic usage of this post-processor.
+	 * <p>Specifying Spring's {@link org.springframework.jndi.support.SimpleJndiBeanFactory}
+	 * leads to JNDI lookup behavior equivalent to standard Java EE 5 resource injection,
+	 * even for {@code name} attributes and default names. This is the same behavior
+	 * that the "alwaysUseJndiLookup" flag enables.
+	 * @see #setAlwaysUseJndiLookup
+	 */
+	public void setResourceFactory(BeanFactory resourceFactory) {
+		Assert.notNull(resourceFactory, "BeanFactory must not be null");
+		this.resourceFactory = resourceFactory;
+	}
+
+	@Override
+	public void setBeanFactory(BeanFactory beanFactory) {
+		Assert.notNull(beanFactory, "BeanFactory must not be null");
+		this.beanFactory = beanFactory;
+		if (this.resourceFactory == null) {
+			this.resourceFactory = beanFactory;
+		}
+		if (beanFactory instanceof ConfigurableBeanFactory) {
+			this.embeddedValueResolver = new EmbeddedValueResolver((ConfigurableBeanFactory) beanFactory);
+		}
+	}
+
+
+	@Override
+	public void postProcessMergedBeanDefinition(RootBeanDefinition beanDefinition, Class<?> beanType, String beanName) {
+		super.postProcessMergedBeanDefinition(beanDefinition, beanType, beanName);
+		InjectionMetadata metadata = findResourceMetadata(beanName, beanType, null);
+		metadata.checkConfigMembers(beanDefinition);
+	}
+
+	@Override
+	public void resetBeanDefinition(String beanName) {
+		this.injectionMetadataCache.remove(beanName);
+	}
+
+	@Override
+	public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
+		return null;
+	}
+
+	@Override
+	public boolean postProcessAfterInstantiation(Object bean, String beanName) {
+		return true;
+	}
+
+	@Override
+	public PropertyValues postProcessProperties(PropertyValues pvs, Object bean, String beanName) {
+		InjectionMetadata metadata = findResourceMetadata(beanName, bean.getClass(), pvs);
+		try {
+			metadata.inject(bean, beanName, pvs);
+		}
+		catch (Throwable ex) {
+			throw new BeanCreationException(beanName, "Injection of resource dependencies failed", ex);
+		}
+		return pvs;
+	}
+
+	@Deprecated
+	@Override
+	public PropertyValues postProcessPropertyValues(
+			PropertyValues pvs, PropertyDescriptor[] pds, Object bean, String beanName) {
+
+		return postProcessProperties(pvs, bean, beanName);
+	}
+
+
+	private InjectionMetadata findResourceMetadata(String beanName, final Class<?> clazz, @Nullable PropertyValues pvs) {
+		// Fall back to class name as cache key, for backwards compatibility with custom callers.
+		String cacheKey = (StringUtils.hasLength(beanName) ? beanName : clazz.getName());
+		// Quick check on the concurrent map first, with minimal locking.
+		InjectionMetadata metadata = this.injectionMetadataCache.get(cacheKey);
+		if (InjectionMetadata.needsRefresh(metadata, clazz)) {
+			synchronized (this.injectionMetadataCache) {
+				metadata = this.injectionMetadataCache.get(cacheKey);
+				if (InjectionMetadata.needsRefresh(metadata, clazz)) {
+					if (metadata != null) {
+						metadata.clear(pvs);
+					}
+					metadata = buildResourceMetadata(clazz);
+					this.injectionMetadataCache.put(cacheKey, metadata);
+				}
+			}
+		}
+		return metadata;
+	}
+
+	private InjectionMetadata buildResourceMetadata(final Class<?> clazz) {
+		if (!AnnotationUtils.isCandidateClass(clazz, resourceAnnotationTypes)) {
+			return InjectionMetadata.EMPTY;
+		}
+
+		List<InjectionMetadata.InjectedElement> elements = new ArrayList<>();
+		Class<?> targetClass = clazz;
+
+		do {
+			final List<InjectionMetadata.InjectedElement> currElements = new ArrayList<>();
+
+			ReflectionUtils.doWithLocalFields(targetClass, field -> {
+				if (webServiceRefClass != null && field.isAnnotationPresent(webServiceRefClass)) {
+					if (Modifier.isStatic(field.getModifiers())) {
+						throw new IllegalStateException("@WebServiceRef annotation is not supported on static fields");
+					}
+					currElements.add(new WebServiceRefElement(field, field, null));
+				}
+				else if (ejbRefClass != null && field.isAnnotationPresent(ejbRefClass)) {
+					if (Modifier.isStatic(field.getModifiers())) {
+						throw new IllegalStateException("@EJB annotation is not supported on static fields");
+					}
+					currElements.add(new EjbRefElement(field, field, null));
+				}
+				else if (field.isAnnotationPresent(Resource.class)) {
+					if (Modifier.isStatic(field.getModifiers())) {
+						throw new IllegalStateException("@Resource annotation is not supported on static fields");
+					}
+					if (!this.ignoredResourceTypes.contains(field.getType().getName())) {
+						currElements.add(new ResourceElement(field, field, null));
+					}
+				}
+			});
+
+			ReflectionUtils.doWithLocalMethods(targetClass, method -> {
+				Method bridgedMethod = BridgeMethodResolver.findBridgedMethod(method);
+				if (!BridgeMethodResolver.isVisibilityBridgeMethodPair(method, bridgedMethod)) {
+					return;
+				}
+				if (method.equals(ClassUtils.getMostSpecificMethod(method, clazz))) {
+					if (webServiceRefClass != null && bridgedMethod.isAnnotationPresent(webServiceRefClass)) {
+						if (Modifier.isStatic(method.getModifiers())) {
+							throw new IllegalStateException("@WebServiceRef annotation is not supported on static methods");
+						}
+						if (method.getParameterCount() != 1) {
+							throw new IllegalStateException("@WebServiceRef annotation requires a single-arg method: " + method);
+						}
+						PropertyDescriptor pd = BeanUtils.findPropertyForMethod(bridgedMethod, clazz);
+						currElements.add(new WebServiceRefElement(method, bridgedMethod, pd));
+					}
+					else if (ejbRefClass != null && bridgedMethod.isAnnotationPresent(ejbRefClass)) {
+						if (Modifier.isStatic(method.getModifiers())) {
+							throw new IllegalStateException("@EJB annotation is not supported on static methods");
+						}
+						if (method.getParameterCount() != 1) {
+							throw new IllegalStateException("@EJB annotation requires a single-arg method: " + method);
+						}
+						PropertyDescriptor pd = BeanUtils.findPropertyForMethod(bridgedMethod, clazz);
+						currElements.add(new EjbRefElement(method, bridgedMethod, pd));
+					}
+					else if (bridgedMethod.isAnnotationPresent(Resource.class)) {
+						if (Modifier.isStatic(method.getModifiers())) {
+							throw new IllegalStateException("@Resource annotation is not supported on static methods");
+						}
+						Class<?>[] paramTypes = method.getParameterTypes();
+						if (paramTypes.length != 1) {
+							throw new IllegalStateException("@Resource annotation requires a single-arg method: " + method);
+						}
+						if (!this.ignoredResourceTypes.contains(paramTypes[0].getName())) {
+							PropertyDescriptor pd = BeanUtils.findPropertyForMethod(bridgedMethod, clazz);
+							currElements.add(new ResourceElement(method, bridgedMethod, pd));
+						}
+					}
+				}
+			});
+
+			elements.addAll(0, currElements);
+			targetClass = targetClass.getSuperclass();
+		}
+		while (targetClass != null && targetClass != Object.class);
+
+		return InjectionMetadata.forElements(elements, clazz);
+	}
+
+	/**
+	 * Obtain a lazily resolving resource proxy for the given name and type,
+	 * delegating to {@link #getResource} on demand once a method call comes in.
+	 * @param element the descriptor for the annotated field/method
+	 * @param requestingBeanName the name of the requesting bean
+	 * @return the resource object (never {@code null})
+	 * @since 4.2
+	 * @see #getResource
+	 * @see Lazy
+	 */
+	protected Object buildLazyResourceProxy(final LookupElement element, final @Nullable String requestingBeanName) {
+		TargetSource ts = new TargetSource() {
+			@Override
+			public Class<?> getTargetClass() {
+				return element.lookupType;
+			}
+			@Override
+			public boolean isStatic() {
+				return false;
+			}
+			@Override
+			public Object getTarget() {
+				return getResource(element, requestingBeanName);
+			}
+			@Override
+			public void releaseTarget(Object target) {
+			}
+		};
+		ProxyFactory pf = new ProxyFactory();
+		pf.setTargetSource(ts);
+		if (element.lookupType.isInterface()) {
+			pf.addInterface(element.lookupType);
+		}
+		ClassLoader classLoader = (this.beanFactory instanceof ConfigurableBeanFactory ?
+				((ConfigurableBeanFactory) this.beanFactory).getBeanClassLoader() : null);
+		return pf.getProxy(classLoader);
+	}
+
+	/**
+	 * Obtain the resource object for the given name and type.
+	 * @param element the descriptor for the annotated field/method
+	 * @param requestingBeanName the name of the requesting bean
+	 * @return the resource object (never {@code null})
+	 * @throws NoSuchBeanDefinitionException if no corresponding target resource found
+	 */
+	protected Object getResource(LookupElement element, @Nullable String requestingBeanName)
+			throws NoSuchBeanDefinitionException {
+
+		if (StringUtils.hasLength(element.mappedName)) {
+			return this.jndiFactory.getBean(element.mappedName, element.lookupType);
+		}
+		if (this.alwaysUseJndiLookup) {
+			return this.jndiFactory.getBean(element.name, element.lookupType);
+		}
+		if (this.resourceFactory == null) {
+			throw new NoSuchBeanDefinitionException(element.lookupType,
+					"No resource factory configured - specify the 'resourceFactory' property");
+		}
+		return autowireResource(this.resourceFactory, element, requestingBeanName);
+	}
+
+	/**
+	 * Obtain a resource object for the given name and type through autowiring
+	 * based on the given factory.
+	 * @param factory the factory to autowire against
+	 * @param element the descriptor for the annotated field/method
+	 * @param requestingBeanName the name of the requesting bean
+	 * @return the resource object (never {@code null})
+	 * @throws NoSuchBeanDefinitionException if no corresponding target resource found
+	 */
+	protected Object autowireResource(BeanFactory factory, LookupElement element, @Nullable String requestingBeanName)
+			throws NoSuchBeanDefinitionException {
+
+		Object resource;
+		Set<String> autowiredBeanNames;
+		String name = element.name;
+
+		if (factory instanceof AutowireCapableBeanFactory) {
+			AutowireCapableBeanFactory beanFactory = (AutowireCapableBeanFactory) factory;
+			DependencyDescriptor descriptor = element.getDependencyDescriptor();
+			if (this.fallbackToDefaultTypeMatch && element.isDefaultName && !factory.containsBean(name)) {
+				autowiredBeanNames = new LinkedHashSet<>();
+				resource = beanFactory.resolveDependency(descriptor, requestingBeanName, autowiredBeanNames, null);
+				if (resource == null) {
+					throw new NoSuchBeanDefinitionException(element.getLookupType(), "No resolvable resource object");
+				}
+			}
+			else {
+				resource = beanFactory.resolveBeanByName(name, descriptor);
+				autowiredBeanNames = Collections.singleton(name);
+			}
+		}
+		else {
+			resource = factory.getBean(name, element.lookupType);
+			autowiredBeanNames = Collections.singleton(name);
+		}
+
+		if (factory instanceof ConfigurableBeanFactory) {
+			ConfigurableBeanFactory beanFactory = (ConfigurableBeanFactory) factory;
+			for (String autowiredBeanName : autowiredBeanNames) {
+				if (requestingBeanName != null && beanFactory.containsBean(autowiredBeanName)) {
+					beanFactory.registerDependentBean(autowiredBeanName, requestingBeanName);
+				}
+			}
+		}
+
+		return resource;
+	}
+
+
+	/**
+	 * Class representing generic injection information about an annotated field
+	 * or setter method, supporting @Resource and related annotations.
+	 */
+	protected abstract static class LookupElement extends InjectionMetadata.InjectedElement {
+
+		protected String name = "";
+
+		protected boolean isDefaultName = false;
+
+		protected Class<?> lookupType = Object.class;
+
+		@Nullable
+		protected String mappedName;
+
+		public LookupElement(Member member, @Nullable PropertyDescriptor pd) {
+			super(member, pd);
+		}
+
+		/**
+		 * Return the resource name for the lookup.
+		 */
+		public final String getName() {
+			return this.name;
+		}
+
+		/**
+		 * Return the desired type for the lookup.
+		 */
+		public final Class<?> getLookupType() {
+			return this.lookupType;
+		}
+
+		/**
+		 * Build a DependencyDescriptor for the underlying field/method.
+		 */
+		public final DependencyDescriptor getDependencyDescriptor() {
+			if (this.isField) {
+				return new LookupDependencyDescriptor((Field) this.member, this.lookupType);
+			}
+			else {
+				return new LookupDependencyDescriptor((Method) this.member, this.lookupType);
+			}
+		}
+	}
+
+
+	/**
+	 * Class representing injection information about an annotated field
+	 * or setter method, supporting the @Resource annotation.
+	 */
+	private class ResourceElement extends LookupElement {
+
+		private final boolean lazyLookup;
+
+		public ResourceElement(Member member, AnnotatedElement ae, @Nullable PropertyDescriptor pd) {
+			super(member, pd);
+			Resource resource = ae.getAnnotation(Resource.class);
+			String resourceName = resource.name();
+			Class<?> resourceType = resource.type();
+			this.isDefaultName = !StringUtils.hasLength(resourceName);
+			if (this.isDefaultName) {
+				resourceName = this.member.getName();
+				if (this.member instanceof Method && resourceName.startsWith("set") && resourceName.length() > 3) {
+					resourceName = Introspector.decapitalize(resourceName.substring(3));
+				}
+			}
+			else if (embeddedValueResolver != null) {
+				resourceName = embeddedValueResolver.resolveStringValue(resourceName);
+			}
+			if (Object.class != resourceType) {
+				checkResourceType(resourceType);
+			}
+			else {
+				// No resource type specified... check field/method.
+				resourceType = getResourceType();
+			}
+			this.name = (resourceName != null ? resourceName : "");
+			this.lookupType = resourceType;
+			String lookupValue = resource.lookup();
+			this.mappedName = (StringUtils.hasLength(lookupValue) ? lookupValue : resource.mappedName());
+			Lazy lazy = ae.getAnnotation(Lazy.class);
+			this.lazyLookup = (lazy != null && lazy.value());
+		}
+
+		@Override
+		protected Object getResourceToInject(Object target, @Nullable String requestingBeanName) {
+			return (this.lazyLookup ? buildLazyResourceProxy(this, requestingBeanName) :
+					getResource(this, requestingBeanName));
+		}
+	}
+
+
+	/**
+	 * Class representing injection information about an annotated field
+	 * or setter method, supporting the @WebServiceRef annotation.
+	 */
+	private class WebServiceRefElement extends LookupElement {
+
+		private final Class<?> elementType;
+
+		private final String wsdlLocation;
+
+		public WebServiceRefElement(Member member, AnnotatedElement ae, @Nullable PropertyDescriptor pd) {
+			super(member, pd);
+			WebServiceRef resource = ae.getAnnotation(WebServiceRef.class);
+			String resourceName = resource.name();
+			Class<?> resourceType = resource.type();
+			this.isDefaultName = !StringUtils.hasLength(resourceName);
+			if (this.isDefaultName) {
+				resourceName = this.member.getName();
+				if (this.member instanceof Method && resourceName.startsWith("set") && resourceName.length() > 3) {
+					resourceName = Introspector.decapitalize(resourceName.substring(3));
+				}
+			}
+			if (Object.class != resourceType) {
+				checkResourceType(resourceType);
+			}
+			else {
+				// No resource type specified... check field/method.
+				resourceType = getResourceType();
+			}
+			this.name = resourceName;
+			this.elementType = resourceType;
+			if (Service.class.isAssignableFrom(resourceType)) {
+				this.lookupType = resourceType;
+			}
+			else {
+				this.lookupType = resource.value();
+			}
+			this.mappedName = resource.mappedName();
+			this.wsdlLocation = resource.wsdlLocation();
+		}
+
+		@Override
+		protected Object getResourceToInject(Object target, @Nullable String requestingBeanName) {
+			Service service;
+			try {
+				service = (Service) getResource(this, requestingBeanName);
+			}
+			catch (NoSuchBeanDefinitionException notFound) {
+				// Service to be created through generated class.
+				if (Service.class == this.lookupType) {
+					throw new IllegalStateException("No resource with name '" + this.name + "' found in context, " +
+							"and no specific JAX-WS Service subclass specified. The typical solution is to either specify " +
+							"a LocalJaxWsServiceFactoryBean with the given name or to specify the (generated) Service " +
+							"subclass as @WebServiceRef(...) value.");
+				}
+				if (StringUtils.hasLength(this.wsdlLocation)) {
+					try {
+						Constructor<?> ctor = this.lookupType.getConstructor(URL.class, QName.class);
+						WebServiceClient clientAnn = this.lookupType.getAnnotation(WebServiceClient.class);
+						if (clientAnn == null) {
+							throw new IllegalStateException("JAX-WS Service class [" + this.lookupType.getName() +
+									"] does not carry a WebServiceClient annotation");
+						}
+						service = (Service) BeanUtils.instantiateClass(ctor,
+								new URL(this.wsdlLocation), new QName(clientAnn.targetNamespace(), clientAnn.name()));
+					}
+					catch (NoSuchMethodException ex) {
+						throw new IllegalStateException("JAX-WS Service class [" + this.lookupType.getName() +
+								"] does not have a (URL, QName) constructor. Cannot apply specified WSDL location [" +
+								this.wsdlLocation + "].");
+					}
+					catch (MalformedURLException ex) {
+						throw new IllegalArgumentException(
+								"Specified WSDL location [" + this.wsdlLocation + "] isn't a valid URL");
+					}
+				}
+				else {
+					service = (Service) BeanUtils.instantiateClass(this.lookupType);
+				}
+			}
+			return service.getPort(this.elementType);
+		}
+	}
+
+
+	/**
+	 * Class representing injection information about an annotated field
+	 * or setter method, supporting the @EJB annotation.
+	 */
+	private class EjbRefElement extends LookupElement {
+
+		private final String beanName;
+
+		public EjbRefElement(Member member, AnnotatedElement ae, @Nullable PropertyDescriptor pd) {
+			super(member, pd);
+			EJB resource = ae.getAnnotation(EJB.class);
+			String resourceBeanName = resource.beanName();
+			String resourceName = resource.name();
+			this.isDefaultName = !StringUtils.hasLength(resourceName);
+			if (this.isDefaultName) {
+				resourceName = this.member.getName();
+				if (this.member instanceof Method && resourceName.startsWith("set") && resourceName.length() > 3) {
+					resourceName = Introspector.decapitalize(resourceName.substring(3));
+				}
+			}
+			Class<?> resourceType = resource.beanInterface();
+			if (Object.class != resourceType) {
+				checkResourceType(resourceType);
+			}
+			else {
+				// No resource type specified... check field/method.
+				resourceType = getResourceType();
+			}
+			this.beanName = resourceBeanName;
+			this.name = resourceName;
+			this.lookupType = resourceType;
+			this.mappedName = resource.mappedName();
+		}
+
+		@Override
+		protected Object getResourceToInject(Object target, @Nullable String requestingBeanName) {
+			if (StringUtils.hasLength(this.beanName)) {
+				if (beanFactory != null && beanFactory.containsBean(this.beanName)) {
+					// Local match found for explicitly specified local bean name.
+					Object bean = beanFactory.getBean(this.beanName, this.lookupType);
+					if (requestingBeanName != null && beanFactory instanceof ConfigurableBeanFactory) {
+						((ConfigurableBeanFactory) beanFactory).registerDependentBean(this.beanName, requestingBeanName);
+					}
+					return bean;
+				}
+				else if (this.isDefaultName && !StringUtils.hasLength(this.mappedName)) {
+					throw new NoSuchBeanDefinitionException(this.beanName,
+							"Cannot resolve 'beanName' in local BeanFactory. Consider specifying a general 'name' value instead.");
+				}
+			}
+			// JNDI name lookup - may still go to a local BeanFactory.
+			return getResource(this, requestingBeanName);
+		}
+	}
+
+
+	/**
+	 * Extension of the DependencyDescriptor class,
+	 * overriding the dependency type with the specified resource type.
+	 */
+	private static class LookupDependencyDescriptor extends DependencyDescriptor {
+
+		private final Class<?> lookupType;
+
+		public LookupDependencyDescriptor(Field field, Class<?> lookupType) {
+			super(field, true);
+			this.lookupType = lookupType;
+		}
+
+		public LookupDependencyDescriptor(Method method, Class<?> lookupType) {
+			super(new MethodParameter(method, 0), true);
+			this.lookupType = lookupType;
+		}
+
+		@Override
+		public Class<?> getDependencyType() {
+			return this.lookupType;
+		}
+	}
+
+}
+
+```
+
+
+
+可以看出 CommonAnnotationBeanPostProcessor 这个东西还包括了一些 Java EE 的东西在里面，这里的 Common 主要是指通用或者是指 java 标准的一些
+
+注解。包括了 javax.xml.ws.WebServiceRef ，这个作用是在本地引用一个 webService 的远程调用的一个引用。
+
+以及 javax.ejb.EJB ，这个类是在 java 5.0 和 EJB 3.0 之后的一个产物。这个注解一样可以被 Spring 处理。
+
+在源码最开始的静态初始化代码块中可以发现一个有意思的事情，他在初始化 javax.xml.ws.WebServiceRef 和 javax.ejb.EJB 的时候，用了 try-catch 的方式，
+
+异常了就将属性设置为空，这是为什么呢？因为可能因为环境的不同，导致这些玩意会没有，所以这时候加个 try-catch 是为了看一下当前上下文里，当前的
+
+classpath 里面是否存在这样一个注解类。
+
+
+
+
+
+EventListenerMethodProcessor ，通过字面意思也能看出来 @EventListener 标注的处理器，因为在 Spring 4.2 之后提出了一个新的注解，@EventListener，
+
+这个注解可以标注的方法上面，就不需要再去像过去一样实现 ApplicationListener 的规范。
+
+
+
+通常 Spring 应用是需要通过我们的 ApplicationListener 来进行监听的，这个接口有什么缺陷或者什么限制吗？
+
+他的限制主要是我们每一个 Event 的实现，例如：applicationContext.refresh()  应用上下文启动的时候，我每一个 Listener 只能对应一个 Event 实现。
+
+这是由 ApplicationListener # onApplicationListener( E e) 这个方法签名所限制的。因为他只能处理一个相关的 事件。
+
+于是在 Spring 4.2 引入了一个新的注解，叫做 @EventListener
+
+
+
+##### ApplicationListener.java 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context;
+
+import java.util.EventListener;
+
+/**
+ * Interface to be implemented by application event listeners.
+ *
+ * <p>Based on the standard {@code java.util.EventListener} interface
+ * for the Observer design pattern.
+ *
+ * <p>As of Spring 3.0, an {@code ApplicationListener} can generically declare
+ * the event type that it is interested in. When registered with a Spring
+ * {@code ApplicationContext}, events will be filtered accordingly, with the
+ * listener getting invoked for matching event objects only.
+ *
+ * @author Rod Johnson
+ * @author Juergen Hoeller
+ * @param <E> the specific {@code ApplicationEvent} subclass to listen to
+ * @see org.springframework.context.ApplicationEvent
+ * @see org.springframework.context.event.ApplicationEventMulticaster
+ * @see org.springframework.context.event.EventListener
+ */
+@FunctionalInterface
+public interface ApplicationListener<E extends ApplicationEvent> extends EventListener {
+
+	/**
+	 * Handle an application event.
+	 * @param event the event to respond to
+	 */
+	void onApplicationEvent(E event);
+
+}
+
+```
+
+
+
+##### EventListener.java 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context.event;
+
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+import org.springframework.context.ApplicationEvent;
+import org.springframework.core.annotation.AliasFor;
+
+/**
+ * Annotation that marks a method as a listener for application events.
+ *
+ * <p>If an annotated method supports a single event type, the method may
+ * declare a single parameter that reflects the event type to listen to.
+ * If an annotated method supports multiple event types, this annotation
+ * may refer to one or more supported event types using the {@code classes}
+ * attribute. See the {@link #classes} javadoc for further details.
+ *
+ * <p>Events can be {@link ApplicationEvent} instances as well as arbitrary
+ * objects.
+ *
+ * <p>Processing of {@code @EventListener} annotations is performed via
+ * the internal {@link EventListenerMethodProcessor} bean which gets
+ * registered automatically when using Java config or manually via the
+ * {@code <context:annotation-config/>} or {@code <context:component-scan/>}
+ * element when using XML config.
+ *
+ * <p>Annotated methods may have a non-{@code void} return type. When they
+ * do, the result of the method invocation is sent as a new event. If the
+ * return type is either an array or a collection, each element is sent
+ * as a new individual event.
+ *
+ * <p>This annotation may be used as a <em>meta-annotation</em> to create custom
+ * <em>composed annotations</em>.
+ *
+ * <h3>Exception Handling</h3>
+ * <p>While it is possible for an event listener to declare that it
+ * throws arbitrary exception types, any checked exceptions thrown
+ * from an event listener will be wrapped in an
+ * {@link java.lang.reflect.UndeclaredThrowableException UndeclaredThrowableException}
+ * since the event publisher can only handle runtime exceptions.
+ *
+ * <h3>Asynchronous Listeners</h3>
+ * <p>If you want a particular listener to process events asynchronously, you
+ * can use Spring's {@link org.springframework.scheduling.annotation.Async @Async}
+ * support, but be aware of the following limitations when using asynchronous events.
+ *
+ * <ul>
+ * <li>If an asynchronous event listener throws an exception, it is not propagated
+ * to the caller. See {@link org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler
+ * AsyncUncaughtExceptionHandler} for more details.</li>
+ * <li>Asynchronous event listener methods cannot publish a subsequent event by returning a
+ * value. If you need to publish another event as the result of the processing, inject an
+ * {@link org.springframework.context.ApplicationEventPublisher ApplicationEventPublisher}
+ * to publish the event manually.</li>
+ * </ul>
+ *
+ * <h3>Ordering Listeners</h3>
+ * <p>It is also possible to define the order in which listeners for a
+ * certain event are to be invoked. To do so, add Spring's common
+ * {@link org.springframework.core.annotation.Order @Order} annotation
+ * alongside this event listener annotation.
+ *
+ * @author Stephane Nicoll
+ * @author Sam Brannen
+ * @since 4.2
+ * @see EventListenerMethodProcessor
+ */
+@Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface EventListener {
+
+	/**
+	 * Alias for {@link #classes}.
+	 */
+	@AliasFor("classes")
+	Class<?>[] value() default {};
+
+	/**
+	 * The event classes that this listener handles.
+	 * <p>If this attribute is specified with a single value, the
+	 * annotated method may optionally accept a single parameter.
+	 * However, if this attribute is specified with multiple values,
+	 * the annotated method must <em>not</em> declare any parameters.
+	 */
+	@AliasFor("value")
+	Class<?>[] classes() default {};
+
+	/**
+	 * Spring Expression Language (SpEL) expression used for making the event
+	 * handling conditional.
+	 * <p>The event will be handled if the expression evaluates to boolean
+	 * {@code true} or one of the following strings: {@code "true"}, {@code "on"},
+	 * {@code "yes"}, or {@code "1"}.
+	 * <p>The default expression is {@code ""}, meaning the event is always handled.
+	 * <p>The SpEL expression will be evaluated against a dedicated context that
+	 * provides the following metadata:
+	 * <ul>
+	 * <li>{@code #root.event} or {@code event} for references to the
+	 * {@link ApplicationEvent}</li>
+	 * <li>{@code #root.args} or {@code args} for references to the method
+	 * arguments array</li>
+	 * <li>Method arguments can be accessed by index. For example, the first
+	 * argument can be accessed via {@code #root.args[0]}, {@code args[0]},
+	 * {@code #a0}, or {@code #p0}.</li>
+	 * <li>Method arguments can be accessed by name (with a preceding hash tag)
+	 * if parameter names are available in the compiled byte code.</li>
+	 * </ul>
+	 */
+	String condition() default "";
+
+}
+
+```
+
+
+
+这个注解可以用在方法上面，也可以用在注解上面。@EventListener 具有元注解的特性，后面细说。
+
+
+
+注释 @see 的地方有一个引导，可以引导到 EventListenerMethodProcessor 里面去，实现了 BeanFactoryRegistryProcessor 说明可以去 Bean 容器的
+
+生命周期。为什么要对 Bean 容器进行后置处理？因为 java 里面是静态语言，因此在静态语言里面标注一些注解的时候，我们反射可以调用到，在容器
+
+Bean 生命周期处理的时候，可以得到一些东西。例如： BeanDefinition 里面有个方法叫做 getBeanClassName () 的方法，他标注了一个 @Nullable ，
+
+类里面定义的方法是确定的，因此方法上面标注的注解也是确定的，所以说我们可以在 Bean 定义的时候得到这些信息。
+
+
+
+### 注解驱动 Spring 应用上下文内建可查找依赖（补充）
+
+| Bean 名称                                                    | Bean 实例                           | 使用场景                                               |
+| ------------------------------------------------------------ | ----------------------------------- | ------------------------------------------------------ |
+| org.springframework.context.event.internal.EventListenerFactory | DefaultEventListenerFactory 对象    | @EvenetListener 事件监听方法适配为 ApplicationListener |
+| org.springframework.context.annotation.internal.PersistenceAnnotationProcessor | PersistenceAnnotationProcessor 对象 | （条件激活）处理 JPA 注解场景                          |
+|                                                              |                                     |                                                        |
+
+
+
+在 EventListenerMethodProcessor 里面有个 postProcessorBeanFactory 的方法：
+
+```java
+@Override
+	public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) {
+		this.beanFactory = beanFactory;
+
+        //这里可以实现多个 EvenetListerFactory 在里面进行处理。
+		Map<String, EventListenerFactory> beans = beanFactory.getBeansOfType(EventListenerFactory.class, false, false);
+		List<EventListenerFactory> factories = new ArrayList<>(beans.values());
+		AnnotationAwareOrderComparator.sort(factories);
+		this.eventListenerFactories = factories;
+	}
+```
+
+
+
+##### EvenetListenerFactory.java 源码：
+
+```java
+/*
+ * Copyright 2002-2015 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context.event;
+
+import java.lang.reflect.Method;
+
+import org.springframework.context.ApplicationListener;
+
+/**
+ * Strategy interface for creating {@link ApplicationListener} for methods
+ * annotated with {@link EventListener}.
+ *
+ * @author Stephane Nicoll
+ * @since 4.2
+ */
+public interface EventListenerFactory {
+
+	/**
+		判断方法是否支持 EventListener 的方式。
+	 * Specify if this factory supports the specified {@link Method}.
+	 * @param method an {@link EventListener} annotated method
+	 * @return {@code true} if this factory supports the specified method
+	 */
+	boolean supportsMethod(Method method);
+
+	/**
+		我们前面标注 @EventListener ，后面都要用到 ApplicationListener ，这里就是做了个适配。把我们标注 @EventListener 的方法
+		适配成我们想要的东西。
+		这里需要三个东西 ，beanName beanType , 以及标注 @EventListener 的方法。
+	 * Create an {@link ApplicationListener} for the specified method.
+	 * @param beanName the name of the bean
+	 * @param type the target type of the instance
+	 * @param method the {@link EventListener} annotated method
+	 * @return an application listener, suitable to invoke the specified method
+	 */
+	ApplicationListener<?> createApplicationListener(String beanName, Class<?> type, Method method);
+
+}
+
+```
+
+
+
+具体的实现有两个：
+
+​	DefaultEventListenerFactory.java
+
+​	TransactionEventListenerFactory.java
+
+
+
+##### DefaultEvenetListenerFactory.java 源码：
+
+```java
+/*
+ * Copyright 2002-2018 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context.event;
+
+import java.lang.reflect.Method;
+
+import org.springframework.context.ApplicationListener;
+import org.springframework.core.Ordered;
+
+/**
+ * Default {@link EventListenerFactory} implementation that supports the
+ * regular {@link EventListener} annotation.
+ *
+ * <p>Used as "catch-all" implementation by default.
+ *
+ * @author Stephane Nicoll
+ * @since 4.2
+ */
+public class DefaultEventListenerFactory implements EventListenerFactory, Ordered {
+
+	private int order = LOWEST_PRECEDENCE;
+
+
+	public void setOrder(int order) {
+		this.order = order;
+	}
+
+	@Override
+	public int getOrder() {
+		return this.order;
+	}
+
+
+	@Override
+	public boolean supportsMethod(Method method) {
+        /*
+        	默认都是 true
+        	其实在筛选的时候，已经把没有标注 @EnevtListener 的方法筛选掉了。。。。
+        */
+		return true;
+	}
+
+	@Override
+	public ApplicationListener<?> createApplicationListener(String beanName, Class<?> type, Method method) {
+        /*
+        	这里有个适配器，也就是说把传来的 beanName , beanType , 标注了 @EventListener 的方法换成了一个 ApplicationListener
+        */
+		return new ApplicationListenerMethodAdapter(beanName, type, method);
+	}
+
+}
+
+```
+
+
+
+ApplicationListenerMethodAdapter 实现了 GenericApplicationListener 继承了 ApplicationListener<ApplicationEvent>，这里先了解结构，后面在
+
+Spring 事件的时候，具体讨论。
+
+
+
+PersistentenceAnnotationBeanPostProcessor 这个对象是个条件激活的后置处理器，需要适配 JPA ，引入 spring-orm 的依赖。这个 Bean 名称，明显
+
+不像我们之前的 AbstractApplicationContext 那些内建 Bean 名称一样好记。不知道这狗娃娃这么想写成这样的。。。其实也不用怕用的时候忘记了，有一个
+
+类叫做 AnnotationConfigUtils ，
+
+
+
+##### AnnotationConfigUtils.java 源码：
+
+```java
+/*
+ * Copyright 2002-2018 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.context.annotation;
+
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
+import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.config.BeanDefinitionHolder;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.context.event.DefaultEventListenerFactory;
+import org.springframework.context.event.EventListenerMethodProcessor;
+import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.core.annotation.AnnotationAttributes;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
+import org.springframework.core.type.AnnotatedTypeMetadata;
+import org.springframework.core.type.AnnotationMetadata;
+import org.springframework.lang.Nullable;
+import org.springframework.util.ClassUtils;
+
+/**
+ * Utility class that allows for convenient registration of common
+ * {@link org.springframework.beans.factory.config.BeanPostProcessor} and
+ * {@link org.springframework.beans.factory.config.BeanFactoryPostProcessor}
+ * definitions for annotation-based configuration. Also registers a common
+ * {@link org.springframework.beans.factory.support.AutowireCandidateResolver}.
+ *
+ * @author Mark Fisher
+ * @author Juergen Hoeller
+ * @author Chris Beams
+ * @author Phillip Webb
+ * @author Stephane Nicoll
+ * @since 2.5
+ * @see ContextAnnotationAutowireCandidateResolver
+ * @see ConfigurationClassPostProcessor
+ * @see CommonAnnotationBeanPostProcessor
+ * @see org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor
+ * @see org.springframework.orm.jpa.support.PersistenceAnnotationBeanPostProcessor
+ */
+public abstract class AnnotationConfigUtils {
+
+	/**
+	 * The bean name of the internally managed Configuration annotation processor.
+	 */
+	public static final String CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME =
+			"org.springframework.context.annotation.internalConfigurationAnnotationProcessor";
+
+	/**
+	 * The bean name of the internally managed BeanNameGenerator for use when processing
+	 * {@link Configuration} classes. Set by {@link AnnotationConfigApplicationContext}
+	 * and {@code AnnotationConfigWebApplicationContext} during bootstrap in order to make
+	 * any custom name generation strategy available to the underlying
+	 * {@link ConfigurationClassPostProcessor}.
+	 * @since 3.1.1
+	 */
+	public static final String CONFIGURATION_BEAN_NAME_GENERATOR =
+			"org.springframework.context.annotation.internalConfigurationBeanNameGenerator";
+
+	/**
+	 * The bean name of the internally managed Autowired annotation processor.
+	 */
+	public static final String AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME =
+			"org.springframework.context.annotation.internalAutowiredAnnotationProcessor";
+
+	/**
+	 * The bean name of the internally managed Required annotation processor.
+	 * @deprecated as of 5.1, since no Required processor is registered by default anymore
+	 */
+	@Deprecated
+	public static final String REQUIRED_ANNOTATION_PROCESSOR_BEAN_NAME =
+			"org.springframework.context.annotation.internalRequiredAnnotationProcessor";
+
+	/**
+	 * The bean name of the internally managed JSR-250 annotation processor.
+	 */
+	public static final String COMMON_ANNOTATION_PROCESSOR_BEAN_NAME =
+			"org.springframework.context.annotation.internalCommonAnnotationProcessor";
+
+	/**
+	 * The bean name of the internally managed JPA annotation processor.
+	 */
+	public static final String PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME =
+			"org.springframework.context.annotation.internalPersistenceAnnotationProcessor";
+
+	private static final String PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME =
+			"org.springframework.orm.jpa.support.PersistenceAnnotationBeanPostProcessor";
+
+	/**
+	 * The bean name of the internally managed @EventListener annotation processor.
+	 */
+	public static final String EVENT_LISTENER_PROCESSOR_BEAN_NAME =
+			"org.springframework.context.event.internalEventListenerProcessor";
+
+	/**
+	 * The bean name of the internally managed EventListenerFactory.
+	 */
+	public static final String EVENT_LISTENER_FACTORY_BEAN_NAME =
+			"org.springframework.context.event.internalEventListenerFactory";
+
+	private static final boolean jsr250Present;
+
+	private static final boolean jpaPresent;
+
+	static {
+		ClassLoader classLoader = AnnotationConfigUtils.class.getClassLoader();
+		jsr250Present = ClassUtils.isPresent("javax.annotation.Resource", classLoader);
+		jpaPresent = ClassUtils.isPresent("javax.persistence.EntityManagerFactory", classLoader) &&
+				ClassUtils.isPresent(PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME, classLoader);
+	}
+
+
+	/**
+	 * Register all relevant annotation post processors in the given registry.
+	 * @param registry the registry to operate on
+	 */
+	public static void registerAnnotationConfigProcessors(BeanDefinitionRegistry registry) {
+		registerAnnotationConfigProcessors(registry, null);
+	}
+
+	/**
+	 * Register all relevant annotation post processors in the given registry.
+	 * @param registry the registry to operate on
+	 * @param source the configuration source element (already extracted)
+	 * that this registration was triggered from. May be {@code null}.
+	 * @return a Set of BeanDefinitionHolders, containing all bean definitions
+	 * that have actually been registered by this call
+	 */
+	public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
+			BeanDefinitionRegistry registry, @Nullable Object source) {
+
+		DefaultListableBeanFactory beanFactory = unwrapDefaultListableBeanFactory(registry);
+		if (beanFactory != null) {
+			if (!(beanFactory.getDependencyComparator() instanceof AnnotationAwareOrderComparator)) {
+				beanFactory.setDependencyComparator(AnnotationAwareOrderComparator.INSTANCE);
+			}
+			if (!(beanFactory.getAutowireCandidateResolver() instanceof ContextAnnotationAutowireCandidateResolver)) {
+				beanFactory.setAutowireCandidateResolver(new ContextAnnotationAutowireCandidateResolver());
+			}
+		}
+
+		Set<BeanDefinitionHolder> beanDefs = new LinkedHashSet<>(8);
+
+		if (!registry.containsBeanDefinition(CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(ConfigurationClassPostProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		if (!registry.containsBeanDefinition(AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(AutowiredAnnotationBeanPostProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		// Check for JSR-250 support, and if present add the CommonAnnotationBeanPostProcessor.
+		if (jsr250Present && !registry.containsBeanDefinition(COMMON_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(CommonAnnotationBeanPostProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, COMMON_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		// Check for JPA support, and if present add the PersistenceAnnotationBeanPostProcessor.
+		if (jpaPresent && !registry.containsBeanDefinition(PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition();
+			try {
+				def.setBeanClass(ClassUtils.forName(PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME,
+						AnnotationConfigUtils.class.getClassLoader()));
+			}
+			catch (ClassNotFoundException ex) {
+				throw new IllegalStateException(
+						"Cannot load optional framework class: " + PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME, ex);
+			}
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		if (!registry.containsBeanDefinition(EVENT_LISTENER_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(EventListenerMethodProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, EVENT_LISTENER_PROCESSOR_BEAN_NAME));
+		}
+
+		if (!registry.containsBeanDefinition(EVENT_LISTENER_FACTORY_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(DefaultEventListenerFactory.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, EVENT_LISTENER_FACTORY_BEAN_NAME));
+		}
+
+		return beanDefs;
+	}
+
+	private static BeanDefinitionHolder registerPostProcessor(
+			BeanDefinitionRegistry registry, RootBeanDefinition definition, String beanName) {
+
+		definition.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);
+		registry.registerBeanDefinition(beanName, definition);
+		return new BeanDefinitionHolder(definition, beanName);
+	}
+
+	@Nullable
+	private static DefaultListableBeanFactory unwrapDefaultListableBeanFactory(BeanDefinitionRegistry registry) {
+		if (registry instanceof DefaultListableBeanFactory) {
+			return (DefaultListableBeanFactory) registry;
+		}
+		else if (registry instanceof GenericApplicationContext) {
+			return ((GenericApplicationContext) registry).getDefaultListableBeanFactory();
+		}
+		else {
+			return null;
+		}
+	}
+
+	public static void processCommonDefinitionAnnotations(AnnotatedBeanDefinition abd) {
+		processCommonDefinitionAnnotations(abd, abd.getMetadata());
+	}
+
+	static void processCommonDefinitionAnnotations(AnnotatedBeanDefinition abd, AnnotatedTypeMetadata metadata) {
+		AnnotationAttributes lazy = attributesFor(metadata, Lazy.class);
+		if (lazy != null) {
+			abd.setLazyInit(lazy.getBoolean("value"));
+		}
+		else if (abd.getMetadata() != metadata) {
+			lazy = attributesFor(abd.getMetadata(), Lazy.class);
+			if (lazy != null) {
+				abd.setLazyInit(lazy.getBoolean("value"));
+			}
+		}
+
+		if (metadata.isAnnotated(Primary.class.getName())) {
+			abd.setPrimary(true);
+		}
+		AnnotationAttributes dependsOn = attributesFor(metadata, DependsOn.class);
+		if (dependsOn != null) {
+			abd.setDependsOn(dependsOn.getStringArray("value"));
+		}
+
+		AnnotationAttributes role = attributesFor(metadata, Role.class);
+		if (role != null) {
+			abd.setRole(role.getNumber("value").intValue());
+		}
+		AnnotationAttributes description = attributesFor(metadata, Description.class);
+		if (description != null) {
+			abd.setDescription(description.getString("value"));
+		}
+	}
+
+	static BeanDefinitionHolder applyScopedProxyMode(
+			ScopeMetadata metadata, BeanDefinitionHolder definition, BeanDefinitionRegistry registry) {
+
+		ScopedProxyMode scopedProxyMode = metadata.getScopedProxyMode();
+		if (scopedProxyMode.equals(ScopedProxyMode.NO)) {
+			return definition;
+		}
+		boolean proxyTargetClass = scopedProxyMode.equals(ScopedProxyMode.TARGET_CLASS);
+		return ScopedProxyCreator.createScopedProxy(definition, registry, proxyTargetClass);
+	}
+
+	@Nullable
+	static AnnotationAttributes attributesFor(AnnotatedTypeMetadata metadata, Class<?> annotationClass) {
+		return attributesFor(metadata, annotationClass.getName());
+	}
+
+	@Nullable
+	static AnnotationAttributes attributesFor(AnnotatedTypeMetadata metadata, String annotationClassName) {
+		return AnnotationAttributes.fromMap(metadata.getAnnotationAttributes(annotationClassName, false));
+	}
+
+	static Set<AnnotationAttributes> attributesForRepeatable(AnnotationMetadata metadata,
+			Class<?> containerClass, Class<?> annotationClass) {
+
+		return attributesForRepeatable(metadata, containerClass.getName(), annotationClass.getName());
+	}
+
+	@SuppressWarnings("unchecked")
+	static Set<AnnotationAttributes> attributesForRepeatable(
+			AnnotationMetadata metadata, String containerClassName, String annotationClassName) {
+
+		Set<AnnotationAttributes> result = new LinkedHashSet<>();
+
+		// Direct annotation present?
+		addAttributesIfNotNull(result, metadata.getAnnotationAttributes(annotationClassName, false));
+
+		// Container annotation present?
+		Map<String, Object> container = metadata.getAnnotationAttributes(containerClassName, false);
+		if (container != null && container.containsKey("value")) {
+			for (Map<String, Object> containedAttributes : (Map<String, Object>[]) container.get("value")) {
+				addAttributesIfNotNull(result, containedAttributes);
+			}
+		}
+
+		// Return merged result
+		return Collections.unmodifiableSet(result);
+	}
+
+	private static void addAttributesIfNotNull(
+			Set<AnnotationAttributes> result, @Nullable Map<String, Object> attributes) {
+
+		if (attributes != null) {
+			result.add(AnnotationAttributes.fromMap(attributes));
+		}
+	}
+
+}
+
+```
+
+
+
+可以看出一些 @EventListener 的处理 Bean 处理器常量化了，并且提供了 静态方法来获取注册的 Annotation 配置的处理器。
+
+
+
+```java
+/**
+	 * Register all relevant annotation post processors in the given registry.
+	 * @param registry the registry to operate on
+	 * @param source the configuration source element (already extracted)
+	 * that this registration was triggered from. May be {@code null}.
+	 * @return a Set of BeanDefinitionHolders, containing all bean definitions
+	 * that have actually been registered by this call
+	 */
+	public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
+			BeanDefinitionRegistry registry, @Nullable Object source) {
+
+		DefaultListableBeanFactory beanFactory = unwrapDefaultListableBeanFactory(registry);
+		if (beanFactory != null) {
+			if (!(beanFactory.getDependencyComparator() instanceof AnnotationAwareOrderComparator)) {
+				beanFactory.setDependencyComparator(AnnotationAwareOrderComparator.INSTANCE);
+			}
+			if (!(beanFactory.getAutowireCandidateResolver() instanceof ContextAnnotationAutowireCandidateResolver)) {
+				beanFactory.setAutowireCandidateResolver(new ContextAnnotationAutowireCandidateResolver());
+			}
+		}
+
+		Set<BeanDefinitionHolder> beanDefs = new LinkedHashSet<>(8);
+
+		if (!registry.containsBeanDefinition(CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(ConfigurationClassPostProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		if (!registry.containsBeanDefinition(AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(AutowiredAnnotationBeanPostProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		// Check for JSR-250 support, and if present add the CommonAnnotationBeanPostProcessor.
+		if (jsr250Present && !registry.containsBeanDefinition(COMMON_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(CommonAnnotationBeanPostProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, COMMON_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		// Check for JPA support, and if present add the PersistenceAnnotationBeanPostProcessor.
+		if (jpaPresent && !registry.containsBeanDefinition(PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition();
+			try {
+				def.setBeanClass(ClassUtils.forName(PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME,
+						AnnotationConfigUtils.class.getClassLoader()));
+			}
+			catch (ClassNotFoundException ex) {
+				throw new IllegalStateException(
+						"Cannot load optional framework class: " + PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME, ex);
+			}
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		if (!registry.containsBeanDefinition(EVENT_LISTENER_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(EventListenerMethodProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, EVENT_LISTENER_PROCESSOR_BEAN_NAME));
+		}
+
+		if (!registry.containsBeanDefinition(EVENT_LISTENER_FACTORY_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(DefaultEventListenerFactory.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, EVENT_LISTENER_FACTORY_BEAN_NAME));
+		}
+
+		return beanDefs;
+	}
+```
+
+
+
+这里其实就是发现我的 BeanDefinitionRegistry（Bean 定义注册中心）中有，通过名称找了处理器的注册之后，就不注册了。反之就是没有的话就会自己注册
+
+一个。
+
+在注册 PersistenceAnnotationProcessor 的时候为什么要判断 jsr250Present ？因为 Spring 3.0 适配的是 java 1.5 的版本，像 @Resource 是 java 1.6 才出来
+
+的，所以说要适配 java 1.5 也要适配 java 1.6。
+
+
+
+
+
+### 总结：
+
+​	通过了解比如说通用型的 AbstractApplicationContext （通用抽象的应用上下文基类）以及 注解驱动里面的这些内置对象，可以大致知道我们在 Spring 场景
+
+中，有一些内置的依赖是可以通过依赖查询的。不过 Spring 不只是包含这些内置的东西，包括在 AOP ，甚至在 Spring Boot 里面，他会有更多的内置对象。
+
+
+
+
+
+
+
+## 8：依赖查找中经典异常：Bean 找不到？Bean 不是唯一的？Bean 创建失败？
+
+
+
+### 依赖查找中的经典异常 - BeansException 子类型
+
+在 Spring 设计里面有个技巧，他这里比较排斥 + 讨厌 别人把他的 异常给 try-catch 掉，这里都是用的 RuntimeException 的类型，因此不用在接口上声明，
+
+必须用哪个接口，我们在调用的时候呢，也不需要到处去 try-catch ，这个和传统的 java EE 不太一样。传统的 java EE 一般都是一些 check 性的异常居多。
+
+| 异常类型                        | 触发条件（举例）                                   | 场景举例                                                 |
+| ------------------------------- | -------------------------------------------------- | -------------------------------------------------------- |
+| NoSuchBeanDefinitionException   | 当 Bean 不存在于 IoC 容器中                        | BeanFactory # getBean()<br />ObjectFactory # getObject() |
+| NoUniqueBeanDefinitionException | 类型依赖查找时，IoC 容器中存在<br />多个 Bean 实例 | BeanFactory # getBean( Class )                           |
+| BeanInstantiationException      | 当 Bean 所对应的类型，非具体类时                   | BeanFactory # getBean()                                  |
+| BeanCreationException           | 当 Bean 初始化过程中                               | Bean 初始化方法执行异常时                                |
+| BeanDefinitionStoreException    | 当 BeanDefinition 配置元信息非法时                 | XML 资源配置无法打开时                                   |
+
+
+
+#### 新增演示代码：
+
+BeanCreationExceptionDemo.java
+
+BeanInstantiationExceptionDemo.java
+
+NoUniqueBeanDefinitionExceptionDemo.java
+
+
+
+### 总结：
+
+​	通过几个例子展示了 Spring 的 一些依赖查找的典型异常，其实这一部分还不只是依赖查找。实际上在整个 Spring 运行过程中，这些异常是经常遇到
+
+。当前我刚上班的时候，天天抓住项目经理帮忙排错，我想大家看完之后应该不会和我一样犯错误了。
+
+
+
+
+
+
+
+## 9：面试题
+
+
+
+##### 1：沙雕面试题： ObjectFactory 和 BeanFactory 的区别？
+
+问你这个问题的人估计真的是个沙雕。。。我遇到过。。。ObjectFactory 我们在工作中用的非常少，这是 Spring 早期的一个接口，用的 BeanFactory 相对比较多。这两者都具备依赖查找的能力，不过 ObjectFactory 不具备依赖查找的能力，他是根据泛型的约定，用 BeanFactory 依赖查找的能力来进行依赖查找的。BeanFactory 则是提供了单一类型的依赖查找、集合类型的依赖查找、层次性依赖查找等多种依赖查找的功能。
+
+可以回顾一下之前的 ObjectFactoryCreatingFactoryBean... DependencyLookupDemo.java
+
+ObjectFactoryCreatingFactoryBean 是通过 FactroyBean 来生成一个 ObjectFactory 的一个实现。可以看到里面有 getObjectType() 这么个方法。
+
+```java
+	@Override
+	public Class<?> getObjectType() {
+		return ObjectFactory.class;
+	}
+
+	@Override
+	protected ObjectFactory<Object> createInstance() {
+		BeanFactory beanFactory = getBeanFactory();
+		Assert.state(beanFactory != null, "No BeanFactory available");
+		Assert.state(this.targetBeanName != null, "No target bean name specified");
+		return new TargetBeanObjectFactory(beanFactory, this.targetBeanName);
+	}
+```
+
+当调用 ObjectFactoryCreatingFactoryBean # createInstance() 的时候，第一步就是获取 BeanFactory 并且作为一个 TargetBeanObjectFactory 来进行返回。
+
+TargetBeanObjectFactory 里面提供了一个 getObject() 的方法，真正调用 getObject() 的时候，其实还是调用 BeanFactory 的 getBean(String beanName)
+
+的方式来返回 Bean 对象。这里的 BeanFactory 的 getBean 不是安全的依赖查找，可能会出现 BeansException 。另外 ObjectFactory 是一个间接的引用其他
+
+Bean 的方式来初始化 Bean，所以这里可以方便我们去做一些初始化的操作。
+
+
+
+##### 2：996 面试题 BeanFactory.getBean 操作是否线程安全？
+
+BeanFactory.getBean 操作是线程安全的，操作过程中有添加互斥锁。可以以 DefaultListableBeanFactory 里面就加了很多的 synchronized 关键字，另外由于
+
+java 5 -> java 6 增加了偏向锁，他的初始化都是放在主线程里面完成的，不要把初始化操作交给子线程来操作。因为偏向锁可以提高一些性能上的优势，否则会
+
+出现一些不必要的锁竞争，再严重点会出现死锁，搞得项目不稳定。
+
+
+
+
+
+##### 3：劝退 面试题 Spring 的依赖查找和 Spring 的依赖注入在来源上有什么区别？
+
+这个放在后面解答，因为我们还有去看 Spring IoC 依赖注入以及 Spring IoC 的依赖来源 的相关知识，淡定。。。。
+
+
+
+### 总结：
+
+​	通过前面几个小节的学习和探讨，我们基本上了解到 Spring IoC 依赖查找的相关特性，IoC 的依赖查找和依赖注入他是有区别的，通常 Spring 更愿意提到他自己更偏好的依赖注入。接下来我们将需要一大把的时间来研究 Spring IoC 依赖注入的一些细节，当然源码也是一大堆一大堆的，别害怕，找到自己的兴趣点，多给自己提点问题，咱们已经完成了一个 Spring 依赖查找的里程碑了~~~
