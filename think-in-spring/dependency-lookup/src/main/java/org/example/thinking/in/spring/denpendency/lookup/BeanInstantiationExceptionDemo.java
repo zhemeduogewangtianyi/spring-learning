@@ -1,14 +1,10 @@
 package org.example.thinking.in.spring.denpendency.lookup;
 
-import org.springframework.beans.MutablePropertyValues;
-import org.springframework.beans.factory.config.ConstructorArgumentValues;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
-import org.springframework.beans.factory.support.GenericBeanDefinition;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class BeanInstantiationExceptionDemo {

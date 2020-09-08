@@ -10842,3 +10842,561 @@ java 5 -> java 6 增加了偏向锁，他的初始化都是放在主线程里面
 ### 总结：
 
 ​	通过前面几个小节的学习和探讨，我们基本上了解到 Spring IoC 依赖查找的相关特性，IoC 的依赖查找和依赖注入他是有区别的，通常 Spring 更愿意提到他自己更偏好的依赖注入。接下来我们将需要一大把的时间来研究 Spring IoC 依赖注入的一些细节，当然源码也是一大堆一大堆的，别害怕，找到自己的兴趣点，多给自己提点问题，咱们已经完成了一个 Spring 依赖查找的里程碑了~~~
+
+
+
+
+
+
+
+
+
+# Spring IoC 依赖注入的模型和类型：Spring 提供了哪些依赖注入的模式和类型？
+
+
+
+关于 Spring IoC 依赖注入的模型和类型，这里会分为 20 个小节进行讨论，这里是比较完善完整的。加油~
+
+
+
+## Spring IoC 依赖注入
+
+### 1、依赖注入的模式和类型
+
+​	模式会分为手动模式和自动模式，类型好比说 setter 方法注入、构造器注入，以及其他方式注入。
+
+### 2、自动绑定 （Autowiring）
+
+​	1：为什么在 Spring 里面会引用到自动绑定？
+
+​	2：自动绑定有哪些模式？官方提到的自动绑定有哪些不足？（其实这玩意官方提出来都后悔了。。。默认自动绑定是关闭的，因为场景非常有限）
+
+​	3：一些注入的模式：setter 、constructor、filed、method、callback（interface） ... injection mode。
+
+​	
+
+### 3、自动绑定（Autowiring）模式
+
+### 4、自动绑定（Autowiring）限制和不足
+
+### 5、setter 方法依赖注入
+
+### 6、构造器依赖注入
+
+### 7、字段注入
+
+### 8、方法注入
+
+### 9、回调注入
+
+### 10、依赖注入类型选择
+
+### 11、基础类型注入
+
+​	和传统的 Bean 注入不太一样，比如像 String 类型，或者是原生类型，并不像传统的注入类型
+
+### 12、集合类型注入
+
+​	对象中有一个集合，这个集合可以管理所有同类型的 Bean 注入，例如 User 对象，上下文里面有三个 User，怎么才能把这些 User 全部注入进来？
+
+### 13、限定注入
+
+​	对注入的对象进行一些限定，比如名称、如何分组（Spring cloud 场景 -> @LoadBalanced ==== @Qualifaier 这个注解不仅可以通过名称，还能通过类型来进行逻辑性的分离或者限定）
+
+### 14、延迟依赖注入
+
+​	延迟依赖查找和延迟依赖查询是有关联性的
+
+### 15、依赖处理过程
+
+​	依赖注入和依赖查找有什么区别？在依赖处理的过程中可以看出一些端倪。
+
+### 16、@Autowired 注入原理
+
+​	底层和 JSR-330 @inject 的原理一样
+
+### 17、JSR-330 @inject 注入原理
+
+​	底层和 @Autowired 的方式一样的。。这玩意是 Spring 的作者 Rod Johnson 来提出的规范，并推给了 Java 社区。在不影响自身的项目启动的同时，给开源社区做了一个很大的贡献。当然 Hibernate 提出了 Bean Validation 这个玩意，也是由开源社区引导的。
+
+### 18、Java 通用注解注入原理
+
+​	通用注解实现和 @Autowired 、JSR-330 的  @Inject 也类似。都是通过注解驱动的方式来注入我们的东西
+
+### 19、自定义依赖注入注解
+
+​	这部分在 Spring 官方是没有说明的。怎么去定义？简单？复杂？
+
+​	简单的话可以依赖已有的实现进行操作，怎么依赖？
+
+​	复杂的话就是自己造轮子，怎么造？Bean 的生命周期~~~比较烧脑。
+
+### 20、面试题。。沙雕 -> 996 -> 劝退
+
+
+
+
+
+## 1：依赖注入的模式和类型
+
+
+
+### 	依赖注入的模式和类型
+
+#### 	·	手动模式 - 配置或者编程的方式，提前安排注入规则（日常开发中用的比较多的），规则需要提前预知
+
+​		·	XML 资源配置元信息
+
+​		·	Java 注解配置元信息
+
+​		·	API 配置元信息 - 这玩意不太会直接使用 。。。容器开发者 或者 Spring扩展机制，这玩意 666
+
+​				XML 资源配置元信息、Java 注解配置元信息 依赖于 API 配置元信息~所以了解了 API 的底层实现，对于我们源码分析和理解有很大帮助
+
+#### 	·	自动模式 - 实现方提供自动依赖、自动关联的方式，按照内建的注入规则。
+
+​		·	Autowiring （自动绑定）- 这种模式官方后悔了。。不大推荐，默认都是 no（关闭）
+
+
+
+## 	依赖注入的类型
+
+#### 	
+
+| 依赖注入类型 | 配置元数据举例                                   |
+| ------------ | ------------------------------------------------ |
+| Setter 方法  | <property name="user" ref="userBean" / >         |
+| 构造方法     | <constructor-arg name="user" ref="userBean"  / > |
+| 字段         | @Autowired User user                             |
+| 方法         | @Autowired public void user(User user){...}      |
+| 接口回调     | class MyBean implements BeanFactoryAware{ ... }  |
+
+​	setter : identifier 鉴定服务 name or id or alias
+
+
+
+​	构造器注入：构造器和 setter 注入在不同的一个时间段来进行注入
+
+
+
+​	字段注入：是没法在 XML 文件里面配置的。setter 注入是需要一个 set() 方法，来绑定关联到一个数据上面来，所以 setter 是通过在 XML 里配置，拿到配置后通过反射的方法进行调用对应的 set() 方法来赋值，字段注入是直接把这个值注入到我的字段里面，官方不大愿意用户这么玩，但是晚了。。。因为这种方式非常危险，原因是：@Autowired 这种方式，那么就依赖于 Spring 的 API ，例如通用 API 就要应用于 @Resource 这种 API 的方式来进行操作，这种方式会有外部的依赖的方式，不是那么纯粹。
+
+
+
+​	方法注入：@Autowired 只是一种方式，其实还有很多的方式。。例如：通过 @Bean 的方式也可以通过方法参数的方式进行参数传递，这种方式在维基百科中又称之为参数注入。说不出他是构造器方式还是 setter 方式，很笼统。
+
+
+
+​	接口回调：这里主要是指 Spring 有一些内建接口，主要以 Aware 这种接口为主，例如：BeanFactoryAware 这种接口，会通过 API 的方式，显示的去传递一个BeanFactory 给当前的 Bean 来进行使用。这时候 Aware 接口会在方法或者是参数注入之前就进行回调，这种关系的注入前后依赖顺序，我们会在 Bean 生命周期里面详细讨论。
+
+
+
+### 总结：
+
+​	我们通过两个方面：依赖注入模式、依赖注入类型 分别讨论了各种依赖注入的不同点和相同点，下面我们会根据这些依赖注入的类型分别进行讨论。
+
+
+
+
+
+## 2：自动绑定（Autowired）：为什么 Spring 会引入 Autowiring ?
+
+
+
+### 自动绑定方式是为了解决什么问题？Spring 官方为什么要提出来？
+
+其实有时代背景的。。
+
+##### 官方解释：
+
+#### 1.4.5. Autowiring Collaborators
+
+The Spring container can autowire relationships between collaborating beans. You can let Spring resolve collaborators (other beans) automatically for your bean by inspecting the contents of the `ApplicationContext`. Autowiring has the following advantages:
+
+- Autowiring can significantly reduce the need to specify properties or constructor arguments. (Other mechanisms such as a bean template [discussed elsewhere in this chapter](https://docs.spring.io/spring/docs/current/spring-framework-reference/core.html#beans-child-bean-definitions) are also valuable in this regard.)
+- Autowiring can update a configuration as your objects evolve. For example, if you need to add a dependency to a class, that dependency can be satisfied automatically without you needing to modify the configuration. Thus autowiring can be especially useful during development, without negating the option of switching to explicit wiring when the code base becomes more stable.
+
+
+
+<bean / >标签可以通过 autowire="byType" autowire="byName" 的方式去给 property 标签 赋值，byName 有一个不好的地方就是一旦字段发生了变化，Spring  就找不到关联的引用了，使代码变得不好维护了。所以说尽量的用 property 标签的 ref 显示的引用另外一个对象。
+
+另外 Java 中有值传递和引用传递这么一说，所以当 ref 的对象变化的时候，引用的 对象也会发生变化
+
+
+
+### 总结：
+
+​	我们简单掌握了一下 Autowiring 的初衷，减少一些属性的配置，引用对象发生变化的时候会自己更新。但是这个初衷看起来不错，但是有问题的。。好比 byName 的方式，字段名称被改了。。。。
+
+
+
+
+
+## 3：自动绑定（Autowired）模式：各种自动绑定的使用场景是什么 ?
+
+
+
+### Autowiring Modes
+
+| 模式        | 说明                                                         |
+| ----------- | ------------------------------------------------------------ |
+| no          | 默认值，未激活 autowiring，需要手动指定依赖注入对象          |
+| byName      | 根据被注入属性的名称作为 Bean 名称进行依赖查找，并将对象设置到该属性。 |
+| byType      | 根据被注入属性的类型作为 Bean 类型进行依赖查找，并将对象设置到该属性 |
+| constructor | 特殊 byType 类型，用于构造器参数                             |
+
+枚举参考 ： org.springframework.beans.factory.annotation.Autowire - Spring 2 出品 支持 Java 5。编译的 API 方面不要求 Java 5 但是在源码层面，会把语言级别提升上来。
+
+
+
+no：Spring 不推荐使用这种自动绑定的方式来进行依赖注入，因为他太危险
+
+byName：setter 方式进行注入，和 XML 方式非常贴切
+
+byType：还是有点危险。。。假如注入的对象是一个单一的简单类型的对象的话还好，如果出现多个类型相同的 Bean 立马蛋疼，立竿见影。有两种解法，第一种是把不需要的 Bean 给干掉。。。但是你怎么知道哪个不需要呢。。。第二种方式把某个 Bean 设置成为 Primary 这种方式。。但是你怎么知。。。
+
+constractor：特殊的 byType 方式。。
+
+
+
+##### Autowire 源码：
+
+```java
+/*
+ * Copyright 2002-2009 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.annotation;
+
+import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
+
+/**
+ * Enumeration determining autowiring status: that is, whether a bean should
+ * have its dependencies automatically injected by the Spring container using
+ * setter injection. This is a core concept in Spring DI.
+ *
+ * <p>Available for use in annotation-based configurations, such as for the
+ * AspectJ AnnotationBeanConfigurer aspect.
+ *
+ * @author Rod Johnson
+ * @author Juergen Hoeller
+ * @since 2.0
+ * @see org.springframework.beans.factory.annotation.Configurable
+ * @see org.springframework.beans.factory.config.AutowireCapableBeanFactory
+ */
+public enum Autowire {
+
+	/**
+	 * Constant that indicates no autowiring at all.
+	 */
+	NO(AutowireCapableBeanFactory.AUTOWIRE_NO),
+
+	/**
+	 * Constant that indicates autowiring bean properties by name.
+	 */
+	BY_NAME(AutowireCapableBeanFactory.AUTOWIRE_BY_NAME),
+
+	/**
+	 * Constant that indicates autowiring bean properties by type.
+	 */
+	BY_TYPE(AutowireCapableBeanFactory.AUTOWIRE_BY_TYPE);
+
+
+	private final int value;
+
+
+	Autowire(int value) {
+		this.value = value;
+	}
+
+	public int value() {
+		return this.value;
+	}
+
+	/**
+	 * Return whether this represents an actual autowiring value.
+	 * @return whether actual autowiring was specified
+	 * (either BY_NAME or BY_TYPE)
+	 */
+	public boolean isAutowire() {
+		return (this == BY_NAME || this == BY_TYPE);
+	}
+
+}
+
+```
+
+
+
+##### 为什么没看到构造器方式？
+
+因为构造器是特殊的 byType。先分析下 **BY_TYPE(AutowireCapableBeanFactory.AUTOWIRE_BY_TYPE);** 
+
+
+
+##### AutowireCapableBeanFactory.java 源码：
+
+```java
+public interface AutowireCapableBeanFactory extends BeanFactory {
+
+	/**
+	 * Constant that indicates no externally defined autowiring. Note that
+	 * BeanFactoryAware etc and annotation-driven injection will still be applied.
+	 * @see #createBean
+	 * @see #autowire
+	 * @see #autowireBeanProperties
+	 */
+	int AUTOWIRE_NO = 0;
+
+	/**
+	 * Constant that indicates autowiring bean properties by name
+	 * (applying to all bean property setters).
+	 * @see #createBean
+	 * @see #autowire
+	 * @see #autowireBeanProperties
+	 */
+	int AUTOWIRE_BY_NAME = 1;
+
+	/**
+	 * Constant that indicates autowiring bean properties by type
+	 * (applying to all bean property setters).
+	 * @see #createBean
+	 * @see #autowire
+	 * @see #autowireBeanProperties
+	 */
+	int AUTOWIRE_BY_TYPE = 2;
+
+	/**
+	 * Constant that indicates autowiring the greediest constructor that
+	 * can be satisfied (involves resolving the appropriate constructor).
+	 * @see #createBean
+	 * @see #autowire
+	 */
+	int AUTOWIRE_CONSTRUCTOR = 3;
+
+	/**
+		这个是一个历史遗留的东西，叫做自动探测，后面高版本就没了。。。
+	 * Constant that indicates determining an appropriate autowire strategy
+	 * through introspection of the bean class.
+	 * @see #createBean
+	 * @see #autowire
+	 * @deprecated as of Spring 3.0: If you are using mixed autowiring strategies,
+	 * prefer annotation-based autowiring for clearer demarcation of autowiring needs.
+	 */
+	@Deprecated
+	int AUTOWIRE_AUTODETECT = 4;
+```
+
+
+
+
+
+### 总结：
+
+​	我们通过列表以及相关 API 的查找，了解了 4 种 Autowiring 的模式的基本使用场景。由于版本问题，在 Spring 3.0 以后他不推荐使用 AUTODETECT 自动探测的方式来进行依赖注入了，我的《深入理解 Spring》 版本真的。。。低。
+
+
+
+
+
+## 4：自动绑定（Autowired）的限制和不足：如何理解和挖掘官方文档中深层次的含义 ?
+
+##### Limitations and Disadvantages of Autowiring
+
+Autowiring works best when it is used consistently across a project. If autowiring is not used in general, it might be confusing to developers to use it to wire only one or two bean definitions.
+
+Consider the limitations and disadvantages of autowiring:
+
+- Explicit dependencies in `property` and `constructor-arg` settings always override autowiring. You cannot autowire simple properties such as primitives, `Strings`, and `Classes` (and arrays of such simple properties). This limitation is by-design.
+
+  
+
+  大意：显示的使用 property 和 constructor-arg 设置，会覆盖掉自动绑定，导致无法装配简单的属性。不能装配一些简单的 properties，例如：原生类型
+
+  以及 String 类型、Class 类型。他是一个设计上的限制，因为 Autowiring 会自动绑定一些 Bean 或者是一些相关的引用对象，这时候我们的原生类型是无
+
+  法声明成一个 Bean 的，所以无法执行自动的 Autowiring。但是我们可以通过 @Value 的方式进行注入，等于把文本类型转化成场景型 ，例如 long 类型
+
+  
+
+- Autowiring is less exact than explicit wiring. Although, as noted in the earlier table, Spring is careful to avoid guessing in case of ambiguity that might have unexpected results. The relationships between your Spring-managed objects are no longer documented explicitly.
+
+
+
+​		大意：Autowiring 是一种精确的 比精确的绑定缺乏精确性，因为 Autowiring 是一种猜测性或者半猜测的东西，例如：byName 他会去上下文里面搜索，
+
+​		看 名字 或者 字段 或者方法、参数 相同的这种方式，来进行自动的一个关联，会产生一个问题：Spring 非常关注精确性，如果出现了一些模糊性情况，
+
+​		名称取得不对，恰好缺了一个关联性的名称，这个时候 Autowiring 就会出错。精确性无法保证，所以 Spring 非常在意精确性，尽可能的避免猜测这种
+
+​		模糊的情况，这会导致一些不确定的结果。
+
+​			User Bean ，字段里面恰好有一个 private User user;	实际上这里想取得一个 SuperUser 对象
+
+
+
+- Wiring information may not be available to tools that may generate documentation from a Spring container.
+
+  
+
+  大意：根据工具方面来说明，自定绑定信息很难在一些工具类上进行呈现。比如生成文档。。。因为他不仅仅是头疼你的 Autowiring，更多的是他很难
+
+  确定注入的 Bean 是否在上下文存在。无法确定所有 classpath 下的包都存在。（没有运行，没法提前预判）只能通过静态的方式来分析上下文里面是否
+
+  有这些信息
+
+  
+
+- Multiple bean definitions within the container may match the type specified by the setter method or constructor argument to be autowired. For arrays, collections, or `Map` instances, this is not necessarily a problem. However, for dependencies that expect a single value, this ambiguity is not arbitrarily resolved. If no unique bean definition is available, an exception is thrown.
+
+  
+
+  大意：如果应用上下文里面存在多个 Bean 的定义，例如：User 包含 User 和 SupperUser 两个对象，这个时候用 Autowiring 自动绑定的方式，就不确定
+
+  到底绑定哪个。。。到底是 byType 还是 byName ？byType 就会出错（你想要一个对象，但是出来了俩。。。）这时候就会产生一些歧义 - 
+
+  NoUniqueBeanDefinitionException 
+
+
+
+以上几点就是 Autowiring 的限制和不足。实际过程中，这玩意用的很少，所以给了这么几种选择。。。
+
+
+
+In the latter scenario, you have several options:
+
+- Abandon autowiring in favor of explicit wiring.
+
+  大意：放弃或关闭这种自动绑定的方式。。。。
+
+- Avoid autowiring for a bean definition by setting its `autowire-candidate` attributes to `false`, as described in the [next section](https://docs.spring.io/spring/docs/current/spring-framework-reference/core.html#beans-factory-autowire-candidate).
+
+  大意：把 autowire-candidate 这个属性设置成 false
+
+- Designate a single bean definition as the primary candidate by setting the `primary` attribute of its `<bean/>` element to `true`.
+
+  大意：把某一个 Bean 设置为 primary
+
+- Implement the more fine-grained control available with annotation-based configuration, as described in [Annotation-based Container Configuration](https://docs.spring.io/spring/docs/current/spring-framework-reference/core.html#beans-annotation-config).
+
+  大意：如果你想更细粒度化的控制，建议通过注解配置的方式来配置各种信息。
+
+
+
+可以看出，Autowiring 这种自动绑定的方式，他是跟着我们的 XML 方式来走的。注解的方式通常会更好一点，因为注解的方式是通过精确的方式，例如：
+
+@Autowired 或者 @Qualifier 这种注解，可以帮助我们精确的定位到底用哪个相关的 Bean 依赖。
+
+
+
+
+
+### 总结：
+
+​	通过文档分析，加上我们之前写过的 demo 代码，了解到 Spring 官方文档里面为什么说 Autowiring 自动绑定的这种方式有哪些限制和不足。
+
+1：会被 property 或者 constructor-arg 覆盖掉
+
+2：无法精确定位绑定
+
+3：不容易生成文档
+
+4：同类型下多个对象 -> NoUniqueBeanDefinitionException.
+
+
+
+建议：
+
+1：直接关闭或者不用
+
+2：auto-candidate 属性设置为 false
+
+3：同一类型下多个对象，把某一个对象设置为 Primary
+
+4：用注解的方式进行配置
+
+
+
+
+
+
+
+## 4：Setter 方法依赖注入：Setter 注入的原理是什么？
+
+
+
+### Spring IoC 注入类型之 Setter 注入
+
+#### 实现方法：
+
+#### 	·	手动方式
+
+#### 			·	XML 资源配置元信息
+
+#### 			·	Java 注解配置元信息
+
+#### 			·	API 配置元信息
+
+#### 	·	自动方式 - 自动绑定（Autowiring）
+
+#### 			·	byName
+
+#### 			·	byType
+
+
+
+##### 新增模块：
+
+​	dependency-injection
+
+第一步：
+
+​	pom 引入 overview 模块
+
+第二步：
+
+​	包名： org.example.thinking.in.spring.denpendency.injection
+
+
+
+首先根据 XML 的方式来进行 Setter 注入
+
+##### 新增文件：
+
+​	XmlDependencySetterInjectionDemo.java 	基于 XML 的方式演示 setter 注入
+
+​	dependency-setter-injection.xml		手动绑定 xml 文件
+
+​	UserHolder.java		User 对象持有类 
+
+​	AnnotationDependencySetterInjectionDemo.java		基于注解的方式演示 setter 注入
+
+​	ApiDependencySetterInjectionDemo.java		基于 API 的方式演示 Setter 注入
+
+​	AutoWiringByNameDependencyInjectionDemo.java	基于 XML 演示 byName 自动绑定注入
+
+​	autowiring-dependency-setter-injection.xml	自动绑定 xml 文件
+
+
+
+
+
+### 总结：
+
+​	我们通过五个案例，分别演示了手动 Setter 注入 User 对象，自动绑定注入 User 对象。其中手动模式我们着重演示了 XML 、JAVA 注解、Spring API
+
+的方式注入 User 对象到 UserHolder 中。另外通过 API 的方式可以理解到 Spring 底层设计的初衷，例如：addPropertyReference 的方式，引用到其他
+
+的 Bean 来达到依赖注入的目的。
