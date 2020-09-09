@@ -4,32 +4,31 @@ import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
 import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 
 /**
- * 基于 Java 注解的方式演示 Setter 注入
+ * 基于 Java 注解的方式 演示 构造器 依赖注入
  * */
-public class AnnotationDependencySetterInjectionDemo {
+public class AnnotationDependencyConstructorInjectionDemo {
 
     public static void main(String[] args) {
 
-        //创建 BeanDefinition 容器
+        //创建 BeanFactory 容器
         AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
 
-        //创建 XML 资源读取器
+        //注册 AnnotationDependencyConstructorInjectionDemo 作为 Configuration Class
+        applicationContext.register(AnnotationConfigApplicationContext.class);
+
+        //创建 XML 读取器，为了实例化我们的 User 对象
         XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(applicationContext);
 
-        String resourcePath = "classpath:/META-INF/dependency-setter-injection.xml";
+        String resourcePath = "classpath:/META-INF/dependency-constructor-injection.xml";
 
-        //读取 XML 资源文件并且创建 BeanDefinition
         beanDefinitionReader.loadBeanDefinitions(resourcePath);
-
-        //注册 AnnotationDependencySetterInjectionDemo 作为 Configuration Class
-        applicationContext.register(AnnotationDependencySetterInjectionDemo.class);
 
         //启动 Spring 应用上下文
         applicationContext.refresh();
 
+        //进行依赖查找
         UserHolder userHolder = applicationContext.getBean(UserHolder.class);
 
         System.out.println(userHolder);
@@ -39,13 +38,9 @@ public class AnnotationDependencySetterInjectionDemo {
 
     }
 
-    /** 方法的依赖注入 */
     @Bean
-    @Primary
     public UserHolder userHolder(User user){
-        UserHolder userHolder = new UserHolder();
-        userHolder.setUser(user);
-        return userHolder;
+        return new UserHolder(user);
     }
 
 }

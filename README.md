@@ -11700,3 +11700,133 @@ public class AutoWiringByNameDependencyInjectionDemo {
 的方式注入 User 对象到 UserHolder 中。另外通过 API 的方式可以理解到 Spring 底层设计的初衷，例如：addPropertyReference 的方式，引用到其他
 
 的 Bean 来达到依赖注入的目的。
+
+
+
+
+
+## 5：构造器依赖注入：官方为什么推荐构造器注入？
+
+
+
+### 实现方式：
+
+#### 	·	手动模式
+
+#### 		·	XML 资源配置元信息
+
+#### 		·	Java 注解配置元信息
+
+#### 		·	API 配置元信息
+
+#### 	·	自动模式
+
+#### 		·	constructor - 一种特殊的 byType 的模式，仅限于 constructor 参数的依赖绑定
+
+
+
+
+
+##### 新增文件：
+
+​	dependency-constructor-injection.xml		构造器依赖注入 xml 配置 bean 文件
+
+​	XmlDependencyConstructorInjectionDemo.java		基于 XML 构造器依赖注入演示
+
+​	AnnotationDependencyConstructorInjectionDemo.java		基于注解 构造器依赖注入演示
+
+​	ApiDependencyConstructorInjectionDemo.java		基于 API 构造器依赖注入演示
+
+​	autowiring-dependency-constructor-injection.xml		自动绑定 XML 配置
+
+
+
+
+
+#### 为什么官方推荐构造器注入？
+
+​	因为 setter 方法的调用顺序是不确定的，但是构造器的调用顺序是确定的。换句话说就是 ，构造方法的注入方式其实可以根据构造方法的参数的顺序来决定。
+
+例如：
+
+```java
+	public UserHolder(User user) {
+        this.user = user;
+    }
+```
+
+比如我的构造方法有多个，我可以第一个参数给 User ，第二个参数 Student，依次类推，形成顺序。
+
+
+
+### 总结：
+
+​	当我们有了 Setter 方法  API  依赖注入，再去学习 Constructor 依赖注入就会简单很多，无论是 XML 配置元信息、Java 注解配置元信息，甚至 API 的方式
+
+配置元信息，都很容易理解。这些是理解 Spring IoC 底层注册生命周期的基本功。未来开发中间件的话，会大量的接触到 Spring API。。。学好了就能成为一个
+
+彻彻底底 API 调用工程师。。。学不好也是一个 API 调用工程师。。。。
+
+
+
+
+
+## 6：字段注入：为什么 Spring 官方没有列举这种注入方式？
+
+
+
+字段注入是我们经常遇到的一种注入方式，比较特殊。在 Spring 官方是鼓励大家使用的构造器注入，不要用字段注入。。。但是我用的真的比较多。。。
+
+
+
+### 实现方式
+
+#### 	·	手动模式
+
+#### 		·	Java 注解配置元信息
+
+#### 			·	@Autowired
+
+#### 			·	@Resource
+
+#### 			·	@Inject（可选）这玩意需要 JSR-330 的 jar 包，我不演示了。。自己斟酌
+
+​					JSR-330 一个新的 API，这个也是由 Spring 的作者 Rod Johnson 提出来的。现在在 Java EE 里面用途广泛，和 @Autowired、@Resource 类似，
+
+​				都是注解的方式进行依赖注入。可以用在注解上面、方法上面、参数上面。
+
+#### 	·	自动方式
+
+# 		没用过，有用过的可以分享下。。。
+
+
+
+##### 新增文件：
+
+​	AnnotationDependencyFieldInjectionDemo.java		字段依赖注入演示
+
+
+
+#### 问题：字段注入能不能给静态字段进行注入？
+
+答：不能哇。。。@Autowired 会忽略掉 静态字段。。所以会获取到 null。
+
+@Resource 也不行。。会直接告诉你不支持静态字段
+
+Caused by: java.lang.IllegalStateException: @Resource annotation is not supported on static fields
+
+
+
+后面会单独说 @Autowired 这种注解处理，提前预习下。。。**AutowiredAnnotationBeanPostProcessor**
+
+这里面告诉了我们怎么排除掉一些静态字段和静态方法。
+
+
+
+
+
+### 总结：
+
+​	大致上讲解了 @Autowired 和 @Resource 的依赖注入方式，其中 @Autowired 会忽略掉静态字段和静态方法，@Resource 遇到静态字段会报错，
+
+所以说我们的字段注入指的是实例字段（对象字段）的注入。接下来讨论下另外一些注解的方式。。。
