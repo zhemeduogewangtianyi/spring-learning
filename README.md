@@ -11391,6 +11391,306 @@ In the latter scenario, you have several options:
 
 
 
+##### XmlDependencySetterInjectionDemo.java
+
+```java
+package org.example.thinking.in.spring.denpendency.injection;
+
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+
+/**
+ * 基于 XML 资源的 Setter 依赖注入示例
+ * */
+public class XmlDependencySetterInjectionDemo {
+
+    public static void main(String[] args) {
+
+        //构造一个空的 BeanFactory
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+
+        //创建 XML BeanDefinition 阅读器
+        XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(beanFactory);
+
+        String xmlResourcePath = "classpath:/META-INF/dependency-setter-injection.xml";
+
+        //XML BeanDefinition 阅读器加载资源文件，并且生成 Spring 的 BeanDefinition 对象
+        beanDefinitionReader.loadBeanDefinitions(xmlResourcePath);
+
+        //依赖查找并且创建 Bean
+        UserHolder userHolder = beanFactory.getBean(UserHolder.class);
+        System.out.println(userHolder);
+
+    }
+
+}
+
+```
+
+
+
+##### dependency-setter-injection.xml
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <import resource="classpath:/META-INF/dependency-lookup-context.xml" />
+
+    <!-- 如何利用 setter 方式进行注入？？？ -->
+    <bean class="org.example.thinking.in.spring.denpendency.injection.UserHolder">
+<!--        <property name="user" ref="user" />-->
+        <property name="user" ref="superUser" />
+    </bean>
+
+</beans>
+```
+
+
+
+##### UserHolder.java
+
+```java
+package org.example.thinking.in.spring.denpendency.injection;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+
+/**
+ * User 持有类
+ * */
+public class UserHolder {
+
+    private User user;
+
+    public UserHolder() {
+
+    }
+
+    public UserHolder(User user) {
+        this.user = user;
+    }
+
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+    @Override
+    public String toString() {
+        return "UserHolder{" +
+                "user=" + user +
+                '}';
+    }
+}
+
+```
+
+
+
+##### AnnotationDependencySetterInjectionDemo.java
+
+```java
+package org.example.thinking.in.spring.denpendency.injection;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+
+/**
+ * 基于 Java 注解的方式演示 Setter 注入
+ * */
+public class AnnotationDependencySetterInjectionDemo {
+
+    public static void main(String[] args) {
+
+        //创建 BeanDefinition 容器
+        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
+
+        //创建 XML 资源读取器
+        XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(applicationContext);
+
+        String resourcePath = "classpath:/META-INF/dependency-setter-injection.xml";
+
+        //读取 XML 资源文件并且创建 BeanDefinition
+        beanDefinitionReader.loadBeanDefinitions(resourcePath);
+
+        //注册 AnnotationDependencySetterInjectionDemo 作为 Configuration Class
+        applicationContext.register(AnnotationDependencySetterInjectionDemo.class);
+
+        //启动 Spring 应用上下文
+        applicationContext.refresh();
+
+        UserHolder userHolder = applicationContext.getBean(UserHolder.class);
+
+        System.out.println(userHolder);
+
+        //关闭 Spring 应用上下文
+        applicationContext.close();
+
+    }
+
+    /** 方法的依赖注入 */
+    @Bean
+    @Primary
+    public UserHolder userHolder(User user){
+        return new UserHolder(user);
+    }
+
+}
+
+```
+
+
+
+##### ApiDependencySetterInjectionDemo.java
+
+```java
+package org.example.thinking.in.spring.denpendency.injection;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.support.BeanDefinitionBuilder;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+
+/**
+ * 基于 API 配置元信息的方式 演示 Setter 注入
+ * */
+public class ApiDependencySetterInjectionDemo {
+
+    public static void main(String[] args) {
+
+        //创建 BeanDefinition 容器
+        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
+
+        //注册 UserHolder 为 Configuration Class
+//        applicationContext.register(UserHolder.class);
+
+        //创建 UserHolderBeanDefinition
+        BeanDefinition userHolderBeanDefinition = createUserHolderBeanDefinition();
+
+        //注册 UserHolderBeanDefinition 到 容器中
+        applicationContext.registerBeanDefinition("userHolder",userHolderBeanDefinition);
+
+        //创建 XML Bean 定义读取器
+        XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(applicationContext);
+
+        String resourcePath = "classpath:/META-INF/dependency-lookup-context.xml";
+
+        //加载 XML 资源，并且创建 BeanDefinition
+        beanDefinitionReader.loadBeanDefinitions(resourcePath);
+
+        //启动 Spring 应用上下文
+        applicationContext.refresh();
+
+        //进行依赖查找
+        UserHolder userHolder = applicationContext.getBean(UserHolder.class);
+
+        System.out.println(userHolder);
+
+
+        //关闭 Spring 应用上下文
+        applicationContext.close();
+
+
+
+    }
+
+    /** 创建 UserHolder BeanDefinition 方法 */
+    public static BeanDefinition createUserHolderBeanDefinition(){
+
+        //创建 UserHolder Bean 定义建造器
+        BeanDefinitionBuilder beanDefinitionBuilder = BeanDefinitionBuilder.genericBeanDefinition(UserHolder.class);
+
+        //为 UserHolder 中的 user 对象赋值，superUser 为 xml 加载到的对象
+        beanDefinitionBuilder.addPropertyReference("user","superUser");
+
+        //返回 Bean 定义
+        return beanDefinitionBuilder.getBeanDefinition();
+
+    }
+
+}
+
+```
+
+
+
+##### AutoWiringByNameDependencyInjectionDemo.java
+
+```java
+package org.example.thinking.in.spring.denpendency.injection;
+
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+
+/**
+ * 通过 BeanName 自动绑定代码演示 - xml
+ * */
+public class AutoWiringByNameDependencyInjectionDemo {
+
+    public static void main(String[] args) {
+
+        //创建一个空的 BeanFactory
+        DefaultListableBeanFactory defaultListableBeanFactory = new DefaultListableBeanFactory();
+
+        //创建 XML Bean 定义读取器
+        XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(defaultListableBeanFactory);
+
+        String resourcePath = "classpath:/META-INF/autowiring-dependency-setter-injection.xml";
+
+        //加载 XML 资源文件，并且创建 BeanDefinition 对象
+        beanDefinitionReader.loadBeanDefinitions(resourcePath);
+
+        //进行依赖查找
+        UserHolder userHolder = defaultListableBeanFactory.getBean(UserHolder.class);
+
+        /*
+            通过名称的方式绑定到了 user 对象。。。通过类型的方式绑定到了 superUser 对象
+            为什么通过 type 会绑定到 superUser 呢？
+            因为在 dependency-lookup-context.xml 中，superUser 被定义为了 Primary...
+         */
+        System.out.println(userHolder);
+
+    }
+
+}
+
+```
+
+
+
+##### autowiring-dependency-setter-injection.xml
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+        https://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <import resource="classpath:/META-INF/dependency-lookup-context.xml" />
+
+    <!-- 如何利用 setter 方式进行注入？？？ -->
+    <bean class="org.example.thinking.in.spring.denpendency.injection.UserHolder"
+          autowire="byType">
+<!--          autowire="byName">-->
+
+<!--        <property name="user" ref="user" />-->
+<!--        <property name="user" ref="superUser" />        替换成 autowiring 的方式  -->
+    </bean>
+
+</beans>
+```
+
 
 
 ### 总结：
