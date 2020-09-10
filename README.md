@@ -11830,3 +11830,381 @@ Caused by: java.lang.IllegalStateException: @Resource annotation is not supporte
 ​	大致上讲解了 @Autowired 和 @Resource 的依赖注入方式，其中 @Autowired 会忽略掉静态字段和静态方法，@Resource 遇到静态字段会报错，
 
 所以说我们的字段注入指的是实例字段（对象字段）的注入。接下来讨论下另外一些注解的方式。。。
+
+
+
+
+
+## 7：方法注入：方法注入是 @Autowired 的专利吗？
+
+
+
+@Autowired 注入会忽略掉 static 字段，字段注入实际上指的是实例字段（对象字段）的注入。
+
+问题：@Autowired 是不是方法注入的唯一途径
+
+答：不是。
+
+## 方法注入实现方式：
+
+### 	·	手动模式
+
+#### 			·	Java 配置注解元信息
+
+### 				·	@Autowired
+
+### 				·	@Resource
+
+### 				·	@Inject（可选）
+
+### 				·	@Bean
+
+​							帮助我们通过方法参数的方式，注入进来依赖。需要注入的参数，就会通过 类型的方式，从 Spring 上下文里面去查找，
+
+​						查找结束之后，发现的参数会有一个特点，就是会优先查找 primary 的 Bean。
+
+
+
+##### 新增文件：
+
+​	AnnotationDependencyMethodInjectionDemo.java		方法依赖注入的演示
+
+
+
+### 总结：
+
+​	只需要调整一下字段注入时注解的位置，字段 -> 方法，就可以实现方法注入。方法注入的时候不关心方法的名字，不一定叫 setXXX
+
+只要我的方法的参数里面有相关的类型，就可以进行依赖注入。
+
+
+
+
+
+## 8：接口回调注入：接口回调注入的使用场景和限制是什么？
+
+
+
+接口回调注入是一种比较特殊的注入方式：
+
+## 接口回调注入
+
+##### 	·	自动模式：
+
+| 内建接口                | 说明                                             |
+| ----------------------- | ------------------------------------------------ |
+| BeanFactoryAware        | 获取 IoC 容器 - BeanFactory                      |
+| ApplicationContextAware | 获取 Spring 应用上下文 - ApplicationContext 对象 |
+| EnvironmentAware        | 获取 Envitonment 对象                            |
+| ResourceLoaderAware     | 获取资源加载器 - ResourceLoader 对象             |
+| BeanClassLoaderAware    | 获取加载当前 Bean Class 的 ClassLoader 对象      |
+| BeanNameAware           | 获取当前 Bean 的名称                             |
+
+可以看出回调接口是一个系列接口，叫做 XXXAware ，也就是 Aware 接口（意识接口）。可以成为 XX 的意识接口，这类接口一般都是 XXAware 的方式命名。
+
+他是 Spring 3.1 提升出来的一个新接口，像 BeanFactoryAware 之前也存在，只是说从 3.1 搞了个 Aware 接口而已，称之为标记接口。
+
+```java
+/*
+ * Copyright 2002-2018 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory;
+
+/**
+ * A marker superinterface indicating that a bean is eligible to be notified by the
+ * Spring container of a particular framework object through a callback-style method.
+ * The actual method signature is determined by individual subinterfaces but should
+ * typically consist of just one void-returning method that accepts a single argument.
+ *
+ * <p>Note that merely implementing {@link Aware} provides no default functionality.
+ * Rather, processing must be done explicitly, for example in a
+ * {@link org.springframework.beans.factory.config.BeanPostProcessor}.
+ * Refer to {@link org.springframework.context.support.ApplicationContextAwareProcessor}
+ * for an example of processing specific {@code *Aware} interface callbacks.
+ *
+ * @author Chris Beams
+ * @author Juergen Hoeller
+ * @since 3.1
+ */
+public interface Aware {
+
+}
+
+```
+
+BeanFactoryAware：
+
+​	我要注入的对象就是我们前面描述的东西，BeanFactoryAware 就是需要注入一个 BeanFactory，那么就获取当前 Bean 容器，
+
+ApplicationContextAware：
+
+​	获取当前应用上下文。
+
+EnvironmentAware：
+
+​	获取。。。
+
+。。。。以此类推
+
+
+
+##### 补充：自动模式
+
+| 内建接口                       | 说明                                                  |
+| ------------------------------ | ----------------------------------------------------- |
+| MessageSourceAware             | 获取 MessageSource 对象，用于 Spring 国际化           |
+| ApplicationEventPublisherAware | 获取 ApplicationEventPublisher 对象，用于 Spring 事件 |
+| EmbeddedValueResolverAware     | 获取 StringValueResolver 对象，用于占位符处理         |
+
+MessageSource：
+
+​	用于国际化文案的接口，里面有 code 和文案，基于 ResourceBundle 来进行实现。后面会详细讨论 Spring 国际化
+
+ApplicationEventPublisherAware：
+
+​	获取 ApplicationEventPublisher ，发布事件
+
+EmbeddedValueResolverAware：
+
+​	这个获取的对象看上去是 EmbeddedValueResolver，最主要的还是为了获取他的规范 StringValueResolver 。用来处理占位符，例如：placeholder ${}
+
+
+
+
+
+#### 基本上所有的 Spring Bean 都可以实现上面这些接口，但是 Aware 系列接口没办法进行扩展。他只是内嵌，因此这种回调方式可以认为是 Spring 内建的一种回调方式。也许他们以后会拉个分支，加上更多的 Aware 系列的实现。
+
+
+
+之前说到的一些内建的可查询，不可查找的依赖，也是通过这种方式（注入的方式）来进行呈现的。例如：API 的方式去注册一些相应的单体对象，或者一些 Bean 的方式来操作。
+
+
+
+### 总结：
+
+​	任何一个类注册到注解驱动的 AnnotationConfigApplicationContext 里面，这个类就是一个 Spring 的 Bean，因此我们可以通过这个类的方式去实现各种 Aware 的接口。
+
+​	这里注入的对象，和我们之前讨论的那些内建隐藏的依赖其实是同一个对象。只不过是实现的手段不一样罢了，后面会单独对这个论点进行激烈的讨论。（依赖注入和依赖查找的来源，和咱们说的这个 Aware 有啥联系？有啥区别？）
+
+
+
+
+
+## 9：依赖注入类型选择：各种依赖注入有什么样的使用场景？
+
+
+
+## 依赖注入类型选择
+
+### 注入选型：
+
+#### 	·	低依赖：构造器注入
+
+​			构造方法参数过多，构造方法在构造的时候会异常的复杂。
+
+#### 	·	多依赖：Setter 方法注入
+
+​			尽管比构造方法执行时间晚，顺序性无法保证，但是可以有效的拆解参数多且复杂的情况。
+
+​			假设依赖注入存在先后依赖的关系，这种方式绝对的蛋疼。
+
+#### 	·	便利性：字段注入
+
+​			我更喜欢这种气的 Rod Johnson 撞墙的方法。。。因为我想注入哪个字段对象，我就加个 @Autowired 就完事了。
+
+​			但是要注意，这种方式在 Spring 、Spring boot 中慢慢的处于淘汰状态了，推荐使用构造器方式进行依赖注入
+
+#### 	·	声明类：方法注入
+
+​			通常不建议这么玩，最好把声明的方法用 @Bean 注解进行标识，提供构造参数，在 Bean 构造的情况下进行操作。
+
+​			这其实就是个组合方式，用于方法参数外部的依赖注入，可以通过构造器或者 Setter 方法来进行二次手动 API 注入。
+
+
+
+### 总结：
+
+​	上头这些就是总结。。。具体情况具体分析，出问题了别说我说的就行。
+
+
+
+
+
+## 9：基础类型注入：String 和 Java 原生类型也能注入 Bean 属性，他们算依赖注入吗？
+
+
+
+这里将会了解到一些非常具体的注入：基础类型注入。并不完全涉及到一些 Bean 的注入，类似于类型转换这样的操作。
+
+
+
+### ·	基础类型
+
+### 	·	原生类型（Primitive）：boolean 、byte、char、short、int、float、long、double
+
+### 	·	标量类型（Scalar）：Number、Character、Boolean、Enum、Locale、Charset、Currency、												Properties、UUID
+
+### 	·	常规类型（General）：Object、String、TimeZone、Calendar、Optional 等
+
+### 	·	Spring 类型：Resource、InputSource（SpringSource）、Formatter（Spring的） 等
+
+
+
+##### 问题：这些类型怎么注入的呢？
+
+
+
+找到：dependency-lookup-context.xml 这个文件。
+
+User 里面定义的 id 和 name ，一个是 Long 类型， 一个是 String 类型。但是在 XML 文件里面定义的 id 是个字符类型，那么字符类型怎么转换成相应的 Long 类型呢？肯定是有一系列的规则转换。假如说我要转换成枚举类型怎么玩？
+
+
+
+##### 新增文件：
+
+​	City.java		枚举类
+
+​	user-config.properties		用户属性类
+
+
+
+把 City 作为属性添加到 User.java 中，随便找个对 XML 进行解析，并且对 User 进行依赖查找的示例代码运行下，就发现 city 我们在 xml 中给的是个字符类型，
+
+输出的时候变成了一个枚举类型。思考这是为什么？枚举是 final static。
+
+
+
+然后在 User.java 里面添加一个 Resource 对象作为属性，建立一个 user-config.properties 的文件，修改 XML 文件配置。
+
+
+
+输出：
+
+​	class path resource [META-INF/user-config.properties]
+
+但是我们只是在 XML 文件中给了一个 字符串的路径。
+
+```xml
+	<bean id="user" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User">
+        <property name="id" value="1" />
+        <property name="name" value="xx" />
+        <property name="city" value="BEIJING" />
+        <property name="configFileLocation" value="classpath:/META-INF/user-config.properties" />
+    </bean>
+```
+
+这里的 Resource 其实是 ClassPathResource ，只针对于 classpath 环境下面的一个操作。
+
+```java
+public String toString() {
+	return this.getDescription();
+}
+
+public String getDescription() {
+        StringBuilder builder = new StringBuilder("class path resource [");
+        String pathToUse = this.path;
+        if (this.clazz != null && !pathToUse.startsWith("/")) {
+            builder.append(ClassUtils.classPackageAsResourcePath(this.clazz));
+            builder.append('/');
+        }
+
+        if (pathToUse.startsWith("/")) {
+            pathToUse = pathToUse.substring(1);
+        }
+
+        builder.append(pathToUse);
+        builder.append(']');
+        return builder.toString();
+    }
+```
+
+这些代码就是生成了 	class path resource [META-INF/user-config.properties] 的代码。。。
+
+
+
+
+
+### 总结：
+
+​	Spring 不仅仅支持一些简单的类型注入，还支持一些复杂类型的注入。例如：原始类型、标量类型、常规类型，Spring 的一些类型，不等同他一定是我们的一些 Bean 或者是一些外部对象。
+
+​	基础类型的注入方式不同于我们传统的 Spring Bean 或者 BeanDefinition 依赖注入方式，大概就是输入一个字符串类型，他帮我们转换成一个相应类型的操作。细节部分我们会在 Spring 类型转换以及元信息配置那块细说里面流转的过程。当然 Spring 也提供了一些让我们扩展、自定义的空间。
+
+​	下面讨论集合类型的注入。
+
+
+
+
+
+## 10：集合类型注入：注入 Collection 和 Map 依赖类型的区别？还支持哪些集合类型？
+
+
+
+前面我们大致可以知道 Spring 在基础类型注入的一些基本情况，接下来我们本着作死的心，来耍一把集合的依赖注入。
+
+实际上就是对前面基础类型和原始的 Spring Bean 类型或者单体注入类型，来做一个集合转换。
+
+
+
+### ·	集合类型
+
+### 	·	数组类型（Array）：原生类型、标量类型、常规类型、Spring 类型
+
+### 	·	集合类型（Collection）：
+
+### 			·	Collection：List、Set（SortedSet、NavigableSet、EnumSet） -》 Java 1.3
+
+### 			·	Map：Properties、Hashtable	
+
+### 								-》 Java 1.0 最开始提供了 Directory 这种 k,v 类型 
+
+### 								-》 Java 1.2 引入 Map 类型
+
+
+
+
+
+##### 下面继续逮住我们的 User 弄。
+
+User 增加 [] 的方式来定义一个属性 
+
+```java
+private City[] cityArray;
+```
+
+
+
+思考：什么是元素类型？
+
+​	元素类型？当然就是元素所对应的类型了。如果说集合就是一个容器的话，那么容器里面都会有成员。比如 cityArray 里面的每一个成员就是一个 ElementType（元素类型）。
+
+​	这玩意会涉及到后面一个元数据的编程。在 Java 里面会用 Class 这个类来标注。里面有个方法叫做 isArray，来告诉我们类型是否为数组（真狗）。如果是数组的话，会有一个 getComponentType() 的方法（我记得叫 getElementType的。。），这个东西的作用就是如果 isArray() 发现了是数组，调用这个方法就会返回这个数组里面所对应的东西。这东西比较特殊，因为只有数组有这个特性，然而 Java 的 Collection 是没有这个特性的。
+
+​	为什么没有呢？因为 Java 集合里面他有一个泛型擦除这个特性的，底层存储的都是 Object 成员，所以他的 ComponentType 是不存在的。当然在 Java 集合（Collection）操作里面，我们后面会说一下关于泛型的处理。
+
+```java
+public interface Collection<E> extends Iterable<E> { ... }
+```
+
+就是这个 E ，怎么取出来。不过方法很狗，用的人不狗就行。在 Spring 泛型处理的时候会细说。
+
+
+
+### 总结：
+
+​	我们现在可以知道基础类型和集合类型就是一种组合和被组合的关系。 SpringFramework 框架里面能够帮我们便利的进行类型转换然后注入。
+
+还有很多的注入。。。一个一个来。

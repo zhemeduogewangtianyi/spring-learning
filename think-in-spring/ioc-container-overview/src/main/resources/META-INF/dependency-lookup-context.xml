@@ -7,6 +7,29 @@
     <bean id="user" class="org.example.thinking.in.spring.ioc.overview.dependency.domain.User">
         <property name="id" value="1" />
         <property name="name" value="xx" />
+        <property name="city" value="BEIJING" />
+        <property name="configFileLocation" value="classpath:/META-INF/user-config.properties" />
+        <property name="cityArray" value="BEIJING,SHANGHAI" />
+<!--        <property name="cityList" value="BEIJING,SHANGHAI,GUANGZHOU" />-->
+        <property name="cityList">
+            <list>
+                <value>BEIJING</value>
+                <value>SHANGHAI</value>
+                <value>GUANGZHOU</value>
+                <value>GUANGZHOU</value>
+                <value>SHANGHAI</value>
+                <value>BEIJING</value>
+            </list>
+        </property>
+
+        <property name="cityMap">
+            <map>
+                <entry key="beijing" >
+                    <value>BEIJING</value>
+                </entry>
+                <entry key="shanghai" value="SHANGHAI" />
+            </map>
+        </property>
     </bean>
 
     <bean id="objectFactoryBean" class="org.springframework.beans.factory.config.ObjectFactoryCreatingFactoryBean">

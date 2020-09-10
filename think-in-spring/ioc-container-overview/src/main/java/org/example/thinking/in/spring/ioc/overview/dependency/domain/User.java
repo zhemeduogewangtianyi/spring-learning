@@ -1,5 +1,12 @@
 package org.example.thinking.in.spring.ioc.overview.dependency.domain;
 
+import org.example.thinking.in.spring.ioc.java.enums.City;
+import org.springframework.core.io.Resource;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
 /**
  * 万能的用户类
  * @author WTY
@@ -10,6 +17,16 @@ public class User {
     private Long id;
 
     private String name;
+
+    private City city;
+
+    private City[] cityArray;
+
+    private List<City> cityList;
+
+    private Map<String,City> cityMap;
+
+    private Resource configFileLocation;
 
     public Long getId() {
         return id;
@@ -29,9 +46,50 @@ public class User {
         System.err.println("name setter 方法");
     }
 
+    public City getCity() {
+        return city;
+    }
+
+    public void setCity(City city) {
+        this.city = city;
+    }
+
+    public Resource getConfigFileLocation() {
+        return configFileLocation;
+    }
+
+    public void setConfigFileLocation(Resource configFileLocation) {
+        this.configFileLocation = configFileLocation;
+    }
+
+    public City[] getCityArray() {
+        return cityArray;
+    }
+
+    public void setCityArray(City[] cityArray) {
+        this.cityArray = cityArray;
+    }
+
+    public List<City> getCityList() {
+        return cityList;
+    }
+
+    public void setCityList(List<City> cityList) {
+        this.cityList = cityList;
+    }
+
+    public Map<String, City> getCityMap() {
+        return cityMap;
+    }
+
+    public void setCityMap(Map<String, City> cityMap) {
+        this.cityMap = cityMap;
+    }
+
     public User(){
         System.err.println("空参构造");
     }
+
 
     public User(Long id, String name) {
         this.id = id;
@@ -44,6 +102,11 @@ public class User {
         return "User{" +
                 "id=" + id +
                 ", name='" + name + '\'' +
+                ", city=" + city +
+                ", cityArray=" + Arrays.toString(cityArray) +
+                ", cityList=" + cityList +
+                ", cityMap=" + cityMap +
+                ", configFileLocation=" + configFileLocation +
                 '}';
     }
 
