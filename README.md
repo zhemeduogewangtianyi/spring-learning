@@ -12208,3 +12208,150 @@ public interface Collection<E> extends Iterable<E> { ... }
 ​	我们现在可以知道基础类型和集合类型就是一种组合和被组合的关系。 SpringFramework 框架里面能够帮我们便利的进行类型转换然后注入。
 
 还有很多的注入。。。一个一个来。
+
+
+
+
+
+
+
+
+
+## 11：限定注入：如何限定 Bean 名称注入？如何实现 Bean 逻辑分组注入？
+
+
+
+### 限定注入：
+
+### 		·	使用注解 @Qualifier 限定
+
+### 				·	使用 Bean 名称限定
+
+### 				·	通过分组限定
+
+### 		·	基于注解 @Qualifier 扩展限定
+
+### 				·	自定义注解 - 如 Spring Cloud 的 @LoadBalanced
+
+
+
+
+
+##### 新增文件：
+
+##### 	QualifierAnnotationDependencyInjectionDemo.java		演示注解限定注入
+
+##### 	UserGroup.java		@Qualifier 的扩展
+
+
+
+##### Qualifier 源码：
+
+```java
+/*
+ * Copyright 2002-2011 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.annotation;
+
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Inherited;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * This annotation may be used on a field or parameter as a qualifier for
+ * candidate beans when autowiring. It may also be used to annotate other
+ * custom annotations that can then in turn be used as qualifiers.
+ *
+ * @author Mark Fisher
+ * @author Juergen Hoeller
+ * @since 2.5
+ * @see Autowired
+ */
+@Target({ElementType.FIELD, ElementType.METHOD, ElementType.PARAMETER, ElementType.TYPE, ElementType.ANNOTATION_TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+@Inherited
+@Documented
+public @interface Qualifier {
+
+	String value() default "";
+
+}
+
+```
+
+可以看出 @Qualifier 不仅可以用在字段上（@Autowired），还可以用在方法上（@Bean），另外还有方法参数上面、类型上面以及注解上面。
+
+
+
+##### @Qualifier 扩展注解：
+
+```java
+package org.example.thinking.in.spring.denpendency.injection.annotation;
+
+import org.springframework.beans.factory.annotation.Qualifier;
+
+import java.lang.annotation.*;
+
+/**
+ * 用户分组注解
+ * {@link Qualifier @Qualifier}
+ * */
+@Target({ElementType.FIELD, ElementType.METHOD, ElementType.PARAMETER, ElementType.TYPE, ElementType.ANNOTATION_TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+@Inherited
+@Documented
+@Qualifier
+public @interface UserGroup {
+}
+
+```
+
+
+
+##### @LoadBalanced 源码：
+
+```java
+/**
+ //这里说了RestTemplate bean 被LoadBalancerClient配置
+ * Annotation to mark a RestTemplate bean to be configured to use a LoadBalancerClient
+ * @author Spencer Gibb
+ */
+@Target({ ElementType.FIELD, ElementType.PARAMETER, ElementType.METHOD })
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Inherited
+@Qualifier
+public @interface LoadBalanced {
+}
+
+```
+
+可以看出 @LoadBalanced 标注了 @Qualifier 注解，目的是什么呢？
+
+​	在 Spring Cloud 里面，我们通常把 RestTemplate 这个 Bean 声明成一个 Spring 的 Bean，同时要标注一下 @LoadBalanced 注解，来进行分组。因此在 Spring 里面会有两种实现，一个是 RestTemplate 的两种 Bean，另外一种是非 @LoadBalanced 没有负载均衡能力的 Bean。由于 Spring Cloud 通过 @LoadBalance 注解来进行划分，如果标注了 @LoadBalanced 注解，那么他就会在 @Qualifier 的基础上做一些扩展。
+
+​	我们的 @UserGroup 也是同样道理，可以选择范围，比如字段上标注、方法上标注、参数以及类型还有注解上都能标注。而 @LoadBalance 注解只能放在字段、参数、方法上面。换言之就是说 @LoadBalance 不能再去扩展。
+
+
+
+
+
+### 总结：
+
+​	我们了解到 @Qualifier 不仅可以通过名称的方式进行限定，而且他还可以实现逻辑或者物理上的一种分组。我们也看到了 Spring Cloud 的 @LoadBalance 注解，也是基于 @Qualifier 来进行扩展。代码的演示都在 github 上了，多看多思考。
