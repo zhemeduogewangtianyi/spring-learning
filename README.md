@@ -12355,3 +12355,1289 @@ public @interface LoadBalanced {
 ### 总结：
 
 ​	我们了解到 @Qualifier 不仅可以通过名称的方式进行限定，而且他还可以实现逻辑或者物理上的一种分组。我们也看到了 Spring Cloud 的 @LoadBalance 注解，也是基于 @Qualifier 来进行扩展。代码的演示都在 github 上了，多看多思考。
+
+
+
+
+
+
+
+## 12：延迟依赖注入：如何限制延迟依赖注入？与延迟依赖查找是类似的吗？
+
+
+
+### 延迟依赖注入：
+
+
+
+### 	·	使用 API ObjectFactory 延迟注入
+
+
+
+#### 		·	单一类型
+
+
+
+#### 		·	集合类型
+
+
+
+### 	·	使用 API ObjectProvider 延迟注入（推荐）
+
+
+
+#### 		·	单一类型
+
+
+
+#### 		·	集合类型
+
+
+
+为什么推荐使用 ObjectyProvider 呢？结合我们前面讨论的安全性理解一下。
+
+ObjectProvider 无论是单一类型还是集合类型，包括 String 或者 Collection 方面的一个扩展，这个扩展可以帮我们做很多事情。
+
+相反，ObjectFactory 只能通过 get 的方法查找单一类型或集合类型。ObjectFactory 只能二选一，没有 ObjectProvider 灵活。
+
+二者都属于延迟注入的方法。例如：先注入一个 ObjectProvider 到我们的对象里面来，同样的方式再进行第二次操作，这种方式
+
+就是我们非延迟 Bean，进行了延迟操作。
+
+
+
+##### 新增代码：
+
+##### 	LazyAnnotationDependencyInjectionDemo.java		展示延迟依赖注入
+
+
+
+##### LazyAnnotationDependencyInjectionDemo 源码：
+
+```java
+package org.example.thinking.in.spring.denpendency.injection;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+
+/**
+ * 通过 {@link ObjectProvider} 的方式演示延迟依赖注入
+ * */
+public class LazyAnnotationDependencyInjectionDemo {
+
+    @Autowired
+    private User user;
+
+    @Autowired
+    private ObjectProvider<User> userObjectProvider;
+
+    public static void main(String[] args) {
+
+        //创建 BeanFactory 容器
+        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
+
+        //注册 LazyAnnotationDependencyInjectionDemo 作为 Configuration Class
+        applicationContext.register(LazyAnnotationDependencyInjectionDemo.class);
+
+        //创建 XML 读取器
+        XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(applicationContext);
+
+        String resourcePath = "classpath:/META-INF/dependency-lookup-context.xml";
+
+        //读取 XML 并且创建 BeanDefinition
+        beanDefinitionReader.loadBeanDefinitions(resourcePath);
+
+        //启动 Spring 应用上下文
+        applicationContext.refresh();
+
+        //进行依赖查找
+        LazyAnnotationDependencyInjectionDemo demo = applicationContext.getBean(LazyAnnotationDependencyInjectionDemo.class);
+
+        System.out.println(demo.user);
+
+        System.out.println(demo.userObjectProvider.getIfAvailable());
+
+        //通过 ObjectProvider 输出 dependency-lookup-context.xml 里面的所有配置的 user 对象
+        demo.userObjectProvider.forEach(System.err::println);
+
+        //关闭 Spring 应用上下文
+        applicationContext.close();
+
+
+    }
+
+}
+
+```
+
+
+
+
+
+### 总结：
+
+​	我们通过延迟依赖注入顺便回顾了下之前的 ObjectFactory 和 ObjectProvider 的相关内容，也提了下依赖查找的安全内容。忘了的去翻一下 github。。。
+
+我们这次的演示代码也能看出，ObjectProvider 的安全性也能运用到依赖注入中来。如果有看 Spring Boot 或者 Spring Cloud 源码的同学，可能会注意到，
+
+构造技术中，大量用了 ObjectProvider 来进行注入一些非必要性的依赖，这种方式可以避免一些 NoSuchBeanDefinitionException 、
+
+NoUniqueBeanDefinitionException 等 BeansException 相关的错误。
+
+
+
+
+
+
+
+## 13：依赖处理过程：依赖处理时会发生什么？其中与依赖查找的差异在哪里？
+
+
+
+这一节主要是来解析以来处理的过程。
+
+### 基础知识：
+
+### 	·	入口 - DefaultListableBeanFactory # resolveDependency
+
+​				这个方法通常有两个重载方法，这两个方法就是我们的基本入口。
+
+### 	·	依赖描述符 - DependencyScriptor
+
+### 	·	自动绑定候选对象处理器 - AutowireCandidateResolver
+
+
+
+上述三个部分是解决我们依赖和注入的基本入口。我们在使用 Spring 的时候，入口不需要到这里来，入口在更高层次有一个实现接口，
+
+在 DefaultListableBeanFactory # resolveDependency 的上级，**AutowireCapableBeanFactory** 中：
+
+
+
+##### AutowireCapableBeanFactory.java 源码部分：
+
+```java
+/**
+	 * Resolve the specified dependency against the beans defined in this factory.
+	 	
+	 	descriptor 指的是一个描述符
+	 	
+	 * @param descriptor the descriptor for the dependency (field/method/constructor)
+	 	
+	 	requestingBeanName 就是我们当前要注入的 BeanName，例如：XX 字段被 Autowire 了，外围的 Bean 就是个 Bean 名称
+	 	
+	 * @param requestingBeanName the name of the bean which declares the given dependency
+	 * @return the resolved object, or {@code null} if none found
+	 * @throws NoSuchBeanDefinitionException if no matching bean was found
+	 * @throws NoUniqueBeanDefinitionException if more than one matching bean was found
+	 * @throws BeansException if dependency resolution failed for any other reason
+	 * @since 2.5
+	 * @see #resolveDependency(DependencyDescriptor, String, Set, TypeConverter)
+	 */
+	@Nullable
+	Object resolveDependency(DependencyDescriptor descriptor, @Nullable String requestingBeanName) throws BeansException;
+
+	/**
+	 * Resolve the specified dependency against the beans defined in this factory.
+	 * @param descriptor the descriptor for the dependency (field/method/constructor)
+	 * @param requestingBeanName the name of the bean which declares the given dependency
+	 
+	 	要是找多个的话，亦可以传多个 BeanName 过来。用 Set 是为了去重，也说明这里并不要求一个强制的顺序
+	 
+	 * @param autowiredBeanNames a Set that all names of autowired beans (used for
+	 * resolving the given dependency) are supposed to be added to
+	 
+	 	typeConverter 这个是我们后面要说的 Spring 类型转换。这里简单理解他是一个类型转换器就行了。
+	 
+	 * @param typeConverter the TypeConverter to use for populating arrays and collections
+	 * @return the resolved object, or {@code null} if none found
+	 * @throws NoSuchBeanDefinitionException if no matching bean was found
+	 * @throws NoUniqueBeanDefinitionException if more than one matching bean was found
+	 * @throws BeansException if dependency resolution failed for any other reason
+	 * @since 2.5
+	 * @see DependencyDescriptor
+	 */
+	@Nullable
+	Object resolveDependency(DependencyDescriptor descriptor, @Nullable String requestingBeanName,
+			@Nullable Set<String> autowiredBeanNames, @Nullable TypeConverter typeConverter) throws BeansException;
+```
+
+
+
+看完了 AutowireCapableBeanFactory 里面的接口方法定义，再回到 DefaultListableBeanFactory 的时候会发现根本不知道怎么下手看源码。。。
+
+很简单，先从 DependencyDescriptor 这个描述符开始看，看看DependencyDeScriptor 到底描述了描述了什么东东。
+
+
+
+##### DependencyDescriptor.java 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.config;
+
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.Serializable;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.Map;
+import java.util.Optional;
+
+import kotlin.reflect.KProperty;
+import kotlin.reflect.jvm.ReflectJvmMapping;
+
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.InjectionPoint;
+import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
+import org.springframework.core.KotlinDetector;
+import org.springframework.core.MethodParameter;
+import org.springframework.core.ParameterNameDiscoverer;
+import org.springframework.core.ResolvableType;
+import org.springframework.core.convert.TypeDescriptor;
+import org.springframework.lang.Nullable;
+import org.springframework.util.ObjectUtils;
+
+/**
+ * Descriptor for a specific dependency that is about to be injected.
+ * Wraps a constructor parameter, a method parameter or a field,
+ * allowing unified access to their metadata.
+ *
+ * @author Juergen Hoeller
+ * @since 2.5
+ */
+@SuppressWarnings("serial")
+public class DependencyDescriptor extends InjectionPoint implements Serializable {
+
+    //标识我们当前声明注入的描述符，换句话说就是被注入的容器。。。容器就是我们声明的类
+	private final Class<?> declaringClass;
+
+    //方法名称，这里的 @Nullable 是 Spring 5 提出的一个新的注解，作用是类型检查。大意就是允许 methodName 为空
+    //因为注入的时候我们不一定是方法注入。。。
+	@Nullable
+	private String methodName;
+
+    //参数类型
+	@Nullable
+	private Class<?>[] parameterTypes;
+
+    //参数索引，从 0 开始计数，这里的作用就是为了看用哪个参数来操作的。。
+	private int parameterIndex;
+
+    //字段名称
+	@Nullable
+	private String fieldName;
+
+    //是否必须，和 @Autowired 注解里面的 required 相对应。
+	private final boolean required;
+
+    //是不是饥饿。对应 @Lazy 注解 的 value 属性。如果为 true 那么就是不饥饿 false，默认false 是饥饿的 true
+	private final boolean eager;
+
+    //嵌入层次，这里主要是指 @Autowired 可能会放在嵌套类里面的
+	private int nestingLevel = 1;
+
+    //和 declaringClass 类型，被包含的类。在什么类里面来进行包含
+	@Nullable
+	private Class<?> containingClass;
+
+    //关于 ResolveableType ，这个会在 Spring 泛型处理那块说
+	@Nullable
+	private transient volatile ResolvableType resolvableType;
+
+    //类型的描述，和依赖的描述类似，主要是描述类型相关的内容
+	@Nullable
+	private transient volatile TypeDescriptor typeDescriptor;
+
+
+	下面省略一万字。。。。
+
+}
+
+```
+
+
+
+可以看出，无论你是方法注入、自动注入、构造器注入，methodName，parameterTypes、fieldName 这些属性都是可选的。但是也有一种情况是有 bug 的，
+
+当三个参数都是空的时候。。。bug 来了 - 找不到注入的来源。
+
+
+
+这个时候是不是还有点蒙。。debug 来看，但是要记住之前说的 入口在 DefaultListableBeanFactory # resolveDependency，其上层依赖源自于
+
+AutowireCapableBeanFactory 的两个重载 resolveDependecy ，分别需要 DependencyDeScriptor、requestingBeanName、或者是多个去重不关心顺序的
+
+requestingBeanName，还有一个TypeRecerver 类型转换器（Spring 泛型处理那块讲）。
+
+
+
+这些记住了还不够，还要记住 DependencyDescriptor 里面有很多属性，以及省略了一万字的方法。属性大概有
+
+declaringClass 被注入的容器
+
+methodName 方法名称，可空
+
+parameterTypes 参数类型，可空
+
+parameterIndex 参数下索引
+
+fieldName 字段名称
+
+required 是否必须 和 @Autowired 的 required 有关
+
+eager 是否饥饿，和 @Lazy 的 value 有关
+
+nestingLevel 嵌套层次
+
+containingClass 被包含的类
+
+resolvableType	类型转换器（Spring 泛型说）
+
+TypeDecriptor 类型描述符
+
+
+
+##### 记不住上来翻一下。。。
+
+
+
+顺便提一点，有没有发现 DependencyDescriptor 继承了一个叫做 **InjectionPoint** 的类？
+
+这是在 Spring 4.3 的时候做了一下重构，加入了 Field 类，MethodParameter 类，以及 Annotation[] ，这样就可以更好的运用反射，更好的表达语义。
+
+
+
+比如：
+
+```java
+	@Nullable
+	public <A extends Annotation> A getAnnotation(Class<A> annotationType) {
+		return (this.field != null ? this.field.getAnnotation(annotationType) :
+				obtainMethodParameter().getParameterAnnotation(annotationType));
+	}
+```
+
+以 LazyAnnotationDependencyInjectionDemo.java 为例子， 他就是想说我们注入的 User 对象在 LazyAnnotationDependencyInjectionDemo 里面是什么类型
+
+的。但是 Spring 4.3 之前，这些描述都是在 DependencyDescriptor 里面来进行描述的。
+
+
+
+有了这些基础，大致上可以了解到，DefaultListableBeanFactory 的 resolveDependency() 就是一个实时注入，并且通过类型（User.class）查找的方式进行依赖
+
+查找。
+
+
+
+再次以 LazyAnnotationDependencyInjectionDemo.java 为例子。。。我们注入的 User 的字段名称为 user，这个东西也是有用到的。我会在代码演示中标识
+
+一下。这样 User 就可以称为是 LazyAnnotationDependencyInjectionDemo 对象里面的一些元信息。同理，我们也可以认为 User 对象就是一个基本的 
+
+DependencyDescriptor 。
+
+
+
+DependencyDescriptor ->  实时注入 + User.class（用于类型查找） + user（字段名称）
+
+注意 ：
+
+​	实时注入 + User.class + user 不完全等于 DependencyDescriptor ！！！
+
+​	DependencyDescriptor 蕴含 ( -> )  实时注入 + User.class + user。。。不能理解的话去参考 **离散数学**。。。
+
+
+
+那么完整的 DependencyDescriptor 怎么表示？
+
+DependencyDeScriptor = DependencyDescriptor 那一坨字段。。
+
+
+
+其实上面说 DependencyDescriptor ->  实时注入 + User.class + user 也不是特别完善。应该改为
+
+
+
+##### 	DependencyDescriptor -> （required = true）+ 实时注入 + User.class + （eager = true）+ user + 是否首要（Primary = true）
+
+
+
+由于类型处理还没学。。。上面表述差一点问题也不大。（基本元信息）
+
+
+
+##### 新增文件：
+
+##### 	AnnotationDependencyInjectionResolutionDemo.java
+
+
+
+##### AnnotationDependencyInjectionResolutionDemo.java 源码部分：
+
+```java
+package org.example.thinking.in.spring.denpendency.injection;
+
+import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+
+/**
+ * 依赖注入处理过程示例代码
+ * */
+public class AnnotationDependencyInjectionResolutionDemo {
+
+    /*
+        我们刚才也在 README.md 中说了，一个大概完整的 DependencyDescriptor 是蕴含了一下 6 个要素的
+        （required = true） + 实时注入 + User.class（通过类型进行依赖查找） + （eager = true） + user（字段名称） + 是否首要（Primary = true）
+    */
+    @Autowired
+    private User user;
+
+
+    public static void main(String[] args) {
+
+        //创建 BeanFactory 容器
+        AnnotationConfigApplicationContext applicationContext = new AnnotationConfigApplicationContext();
+
+        //注册 AnnotationDependencyInjectionResolutionDemo 作为 Configuration Class -> Spring Bean
+        applicationContext.register(AnnotationDependencyInjectionResolutionDemo.class);
+
+        //创建 XML 读取器
+        XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(applicationContext);
+
+        String resourcePath = "classpath:/META-INF/dependency-lookup-context.xml";
+
+        //读取 XML 并且创建 BeanDefinition 注册到 BeanDefinitionRegister 里面
+        beanDefinitionReader.loadBeanDefinitions(resourcePath);
+
+        //启动 Spring 容器上下文
+        applicationContext.refresh();
+
+        //通过依赖查找的方式，从 Spring 上下文中获取 this -> 依赖查找
+        AnnotationDependencyInjectionResolutionDemo demo = applicationContext.getBean(AnnotationDependencyInjectionResolutionDemo.class);
+
+        User user = demo.user;
+
+        System.out.println(user);
+        
+        //关闭 Spring 容器上下文
+        applicationContext.close();
+
+    }
+
+}
+
+```
+
+
+
+
+
+#### 下面开始 debug 看源码。
+
+断点打在这里。。
+
+![image-20200915233306488](C:\Users\WTY\AppData\Roaming\Typora\typora-user-images\image-20200915233306488.png)
+
+
+
+这是运行效果。。记住了刚才 DependencyDescriptor 描述的小伙伴继续往下走。没记住的去对对字段。。。
+
+![image-20200915233726923](C:\Users\WTY\AppData\Roaming\Typora\typora-user-images\image-20200915233726923.png)
+
+
+
+##### DefaultListableBeanFactory # resolveDependency 源码部分：
+
+```java
+	@Override
+	@Nullable
+	public Object resolveDependency(DependencyDescriptor descriptor, @Nullable String requestingBeanName,
+			@Nullable Set<String> autowiredBeanNames, @Nullable TypeConverter typeConverter) throws BeansException {
+
+		descriptor.initParameterNameDiscovery(getParameterNameDiscoverer());
+        
+        /**
+        	这里有一个基本的特点，就是做了一个判断，判断 DependencyDescriptor 的 type 是不是 我们的 User
+        	
+        	1：这里有一个关于 Optional 的判断，就是说我们在注入 User 的时候可以注入为一个 Optional
+        	2：另外一个就是看注入的是不是一个 ObjectFactory 或者 ObjectProvider，可以看 LazyAnnoyationDependencyInjectionDemo。
+        	3：第三个是搞了一个 javaxInjectProviderClass 我们并没有这种 JSR330 的 BeanFactory。
+        	4：else 才是我们能走到的地方。。
+        */
+        
+		if (Optional.class == descriptor.getDependencyType()) {
+			return createOptionalDependency(descriptor, requestingBeanName);
+		}
+		else if (ObjectFactory.class == descriptor.getDependencyType() ||
+				ObjectProvider.class == descriptor.getDependencyType()) {
+			return new DependencyObjectProvider(descriptor, requestingBeanName);
+		}
+		else if (javaxInjectProviderClass == descriptor.getDependencyType()) {
+			return new Jsr330Factory().createDependencyProvider(descriptor, requestingBeanName);
+		}
+		else {
+            /**
+            	这里就涉及到了 AutowireCandidateResolver 。这个东西会返回一个 null。先不去管他
+            */
+			Object result = getAutowireCandidateResolver().getLazyResolutionProxyIfNecessary(
+					descriptor, requestingBeanName);
+			if (result == null) {
+                
+                /**
+                	敲黑板。。。到重点了。
+                	
+                	F7 跟进去
+                	
+                	一大圈代码又回来了，这里拿到的是 谁，心里有 Mysql InnerDB 底层的数据结构了哈
+                */
+				result = doResolveDependency(descriptor, requestingBeanName, autowiredBeanNames, typeConverter);
+			}
+			return result;
+		}
+	}
+```
+
+
+
+##### DefaultListableBeanFactory # doResolveDependency 源码：
+
+```java
+	/**
+		这个方法并不是重载的！！！是 DefaultListableBeanFactory 自己写了一个方法。。。
+	*/
+	@Nullable
+	public Object doResolveDependency(DependencyDescriptor descriptor, @Nullable String beanName,
+			@Nullable Set<String> autowiredBeanNames, @Nullable TypeConverter typeConverter) throws BeansException {
+
+        //处理嵌套多次注入的一个保护点。没有嵌套的话就返回一个 null
+		InjectionPoint previousInjectionPoint = ConstructorResolver.setCurrentInjectionPoint(descriptor);
+        
+		try {
+            //所谓的快捷方式
+			Object shortcut = descriptor.resolveShortcut(this);
+			if (shortcut != null) {
+				return shortcut;
+			}
+
+            //这里获取到我们的 User.class
+			Class<?> type = descriptor.getDependencyType();
+            //这里也会返回空，下面这个 if 可以跳过，因为不符合 User 的预期。
+			Object value = getAutowireCandidateResolver().getSuggestedValue(descriptor);
+			if (value != null) {
+				if (value instanceof String) {
+					String strVal = resolveEmbeddedValue((String) value);
+					BeanDefinition bd = (beanName != null && containsBean(beanName) ?
+							getMergedBeanDefinition(beanName) : null);
+					value = evaluateBeanDefinitionString(strVal, bd);
+				}
+				TypeConverter converter = (typeConverter != null ? typeConverter : getTypeConverter());
+				try {
+					return converter.convertIfNecessary(value, type, descriptor.getTypeDescriptor());
+				}
+				catch (UnsupportedOperationException ex) {
+					// A custom TypeConverter which does not support TypeDescriptor resolution...
+					return (descriptor.getField() != null ?
+							converter.convertIfNecessary(value, type, descriptor.getField()) :
+							converter.convertIfNecessary(value, type, descriptor.getMethodParameter()));
+				}
+			}
+
+            //判断是不是多个 Bean -> 注入 User 的话一样返回空，不先关注
+			Object multipleBeans = resolveMultipleBeans(descriptor, beanName, autowiredBeanNames, typeConverter);
+			if (multipleBeans != null) {
+				return multipleBeans;
+			}
+
+            /**
+            	重点 ！！！
+            	这里的 beanName 就是 DefaultListableBeanFactory # resolveDepdency 的 requesting。
+            	哪个 Bean 被注入了就是哪个 Bean （annotationDependencyInjectionResolutionDemo）
+            	
+            	type ： class org.example.thinking.in.spring.ioc.overview.dependency.domain.User
+            	
+            	descriptor : field 'user'
+            	
+            	这里肯定会返回多个，因为 dependency-lookup-context.xml 里面有 User 和 SuperUser，被 XMLBeanDefinitionReader 
+            	都搞到上下文里面去了，这个 doResolveDependency 又是包含在 DefaultListableBeanFactory 里面的，所以这里能找到当前
+            	Spring 上下文中所管理的类。
+
+				这里必须按个 F7 进去看看。
+            	
+            */
+			Map<String, Object> matchingBeans = findAutowireCandidates(beanName, type, descriptor);
+			if (matchingBeans.isEmpty()) {
+				if (isRequired(descriptor)) {
+					raiseNoMatchingBeanFound(type, descriptor.getResolvableType(), descriptor);
+				}
+				return null;
+			}
+
+			String autowiredBeanName;
+			Object instanceCandidate;
+
+            //在多个 User 里面找到 primary 
+			if (matchingBeans.size() > 1) {
+                /**
+                	预判候选者（Candidate） 
+                	
+                	F7 跟进去
+                */
+				autowiredBeanName = determineAutowireCandidate(matchingBeans, descriptor);
+				if (autowiredBeanName == null) {
+					if (isRequired(descriptor) || !indicatesMultipleBeans(type)) {
+						return descriptor.resolveNotUnique(descriptor.getResolvableType(), matchingBeans);
+					}
+					else {
+						// In case of an optional Collection/Map, silently ignore a non-unique case:
+						// possibly it was meant to be an empty collection of multiple regular beans
+						// (before 4.3 in particular when we didn't even look for collection beans).
+						return null;
+					}
+				}
+                
+                /**
+                	在 findAutowireCandidate 的时候，返回了matchingBeans 对象是一个 LinkedHashMap
+                	里面装了 user 和 superUser
+                	
+                	根据 datermineAutowireCandidate 返回的 beanName 作为找到 SuperUser.class
+                */
+				instanceCandidate = matchingBeans.get(autowiredBeanName);
+			}
+			else {
+				// We have exactly one match.
+				Map.Entry<String, Object> entry = matchingBeans.entrySet().iterator().next();
+				autowiredBeanName = entry.getKey();
+				instanceCandidate = entry.getValue();
+			}
+
+			if (autowiredBeanNames != null) {
+                // SuperUser 的名称添加到 autowiredBeanNames 里面，参数传来的哪个 Set -> 第三个参数
+				autowiredBeanNames.add(autowiredBeanName);
+			}
+			if (instanceCandidate instanceof Class) {
+                //通过 beanName 进行依赖查找，并且改变引用指向
+				instanceCandidate = descriptor.resolveCandidate(autowiredBeanName, type, this);
+			}
+            //赋值
+			Object result = instanceCandidate;
+			if (result instanceof NullBean) {
+				if (isRequired(descriptor)) {
+					raiseNoMatchingBeanFound(type, descriptor.getResolvableType(), descriptor);
+				}
+				result = null;
+			}
+			if (!ClassUtils.isAssignableValue(type, result)) {
+				throw new BeanNotOfRequiredTypeException(autowiredBeanName, type, instanceCandidate.getClass());
+			}
+            //返回对象，回到 DefaultListableBeanFactory # resolveDependency()
+			return result;
+		}
+		finally {
+            //删除 ThreadLocal 中缓存的 当前注入的 User 对象
+			ConstructorResolver.setCurrentInjectionPoint(previousInjectionPoint);
+		}
+	}
+```
+
+
+
+##### DefaultListableBeanFactory # findAutowireCandidates() 源码：
+
+```java
+/**
+	 * Find bean instances that match the required type.
+	 * Called during autowiring for the specified bean.
+	 * @param beanName the name of the bean that is about to be wired
+	 * @param requiredType the actual type of bean to look for
+	 * (may be an array component type or collection element type)
+	 * @param descriptor the descriptor of the dependency to resolve
+	 * @return a Map of candidate names and candidate instances that match
+	 * the required type (never {@code null})
+	 * @throws BeansException in case of errors
+	 * @see #autowireByType
+	 * @see #autowireConstructor
+	 */
+	protected Map<String, Object> findAutowireCandidates(
+			@Nullable String beanName, Class<?> requiredType, DependencyDescriptor descriptor) {
+
+        /**
+        	this（lbf） : 当前的 ListableBeanFactory（DefaultListableBeanFactory 是他的子类）
+        	requiredType : 我们的 User。。
+        	true : includeNonSingletons，去掉非单例的
+        	descriptor.isEager() : allowEagerInit，是否懒加载（延迟加载）
+        	
+        	因为我们的 User 均来自 dependency-lookup-context.xml 里面，所以会有两个 name -> user、superUser
+        	
+        	数组里面的 beanName 和 xml 里面的顺序一致 ！
+        	因为在 BeanFactory 里面注册是先来先注册。
+        	
+        */
+		String[] candidateNames = BeanFactoryUtils.beanNamesForTypeIncludingAncestors(
+				this, requiredType, true, descriptor.isEager());
+        
+		Map<String, Object> result = new LinkedHashMap<>(candidateNames.length);
+        
+        /**
+        	resolvableDependencies 后面再说。
+        	
+        	这里面对应有四个接口：
+        		ApplicationContext
+        		ApplicationEventPublisher
+        		BeanFactory
+        		ResourceLoader
+        */ 
+		for (Map.Entry<Class<?>, Object> classObjectEntry : this.resolvableDependencies.entrySet()) {
+			Class<?> autowiringType = classObjectEntry.getKey();
+			if (autowiringType.isAssignableFrom(requiredType)) {
+				Object autowiringValue = classObjectEntry.getValue();
+				autowiringValue = AutowireUtils.resolveAutowiringValue(autowiringValue, requiredType);
+				if (requiredType.isInstance(autowiringValue)) {
+					result.put(ObjectUtils.identityToString(autowiringValue), autowiringValue);
+					break;
+				}
+			}
+		}
+        
+        //循环 beanName
+		for (String candidate : candidateNames) {
+            
+            //是否自己的引用对象 && 是否 Autowired
+			if (!isSelfReference(beanName, candidate) && isAutowireCandidate(candidate, descriptor)) {
+                /**
+                	这个地方加了两次。
+                */
+				addCandidateEntry(result, candidate, descriptor, requiredType);
+			}
+		}
+        
+        //判断是否多个 Bean
+		if (result.isEmpty()) {
+            
+			boolean multiple = indicatesMultipleBeans(requiredType);
+			// Consider fallback matches if the first pass failed to find anything...
+			DependencyDescriptor fallbackDescriptor = descriptor.forFallbackMatch();
+			for (String candidate : candidateNames) {
+				if (!isSelfReference(beanName, candidate) && isAutowireCandidate(candidate, fallbackDescriptor) &&
+						(!multiple || getAutowireCandidateResolver().hasQualifier(descriptor))) {
+					addCandidateEntry(result, candidate, descriptor, requiredType);
+				}
+			}
+			if (result.isEmpty() && !multiple) {
+				// Consider self references as a final pass...
+				// but in the case of a dependency collection, not the very same bean itself.
+				for (String candidate : candidateNames) {
+					if (isSelfReference(beanName, candidate) &&
+							(!(descriptor instanceof MultiElementDescriptor) || !beanName.equals(candidate)) &&
+							isAutowireCandidate(candidate, fallbackDescriptor)) {
+						addCandidateEntry(result, candidate, descriptor, requiredType);
+					}
+				}
+			}
+		}
+        
+        //返回,继续回到 DefaultListableBeanFactory # doResolveDependency
+		return result;
+	}
+```
+
+
+
+##### DefaultListableBeanFactory # determineAutowireCandidate 源码：
+
+```java
+/**
+	 * Determine the autowire candidate in the given set of beans.
+	 * <p>Looks for {@code @Primary} and {@code @Priority} (in that order).
+	 * @param candidates a Map of candidate names and candidate instances
+	 * that match the required type, as returned by {@link #findAutowireCandidates}
+	 * @param descriptor the target dependency to match against
+	 * @return the name of the autowire candidate, or {@code null} if none found
+	 */
+	@Nullable
+	protected String determineAutowireCandidate(Map<String, Object> candidates, DependencyDescriptor descriptor) {
+		Class<?> requiredType = descriptor.getDependencyType();
+
+        /**
+        	在这里进行判断的 primary，走到这里会得到 SuperUser
+        	
+        	继续 F7
+        */
+		String primaryCandidate = determinePrimaryCandidate(candidates, requiredType);
+		if (primaryCandidate != null) {
+            
+            /**
+            	这里返回的只是 bean name
+            	
+            	他是在 BeanDefinition 里面去判断 哪个 Bean 是首要（Primary）的 Bean。
+            	
+            	继续回到，DefaultListableBeanFactory # doResolveDependency
+            */
+			return primaryCandidate;
+		}
+		String priorityCandidate = determineHighestPriorityCandidate(candidates, requiredType);
+		if (priorityCandidate != null) {
+			return priorityCandidate;
+		}
+		// Fallback
+		for (Map.Entry<String, Object> entry : candidates.entrySet()) {
+			String candidateName = entry.getKey();
+			Object beanInstance = entry.getValue();
+			if ((beanInstance != null && this.resolvableDependencies.containsValue(beanInstance)) ||
+					matchesBeanName(candidateName, descriptor.getDependencyName())) {
+				return candidateName;
+			}
+		}
+		return null;
+	}
+```
+
+
+
+##### DefaultListableBeanFactory # determinePrimaryCandidate() 源码：
+
+```java
+/**
+	 * Determine the primary candidate in the given set of beans.
+	 * @param candidates a Map of candidate names and candidate instances
+	 * (or candidate classes if not created yet) that match the required type
+	 * @param requiredType the target dependency type to match against
+	 * @return the name of the primary candidate, or {@code null} if none found
+	 * @see #isPrimary(String, Object)
+	 */
+	@Nullable
+	protected String determinePrimaryCandidate(Map<String, Object> candidates, Class<?> requiredType) {
+		String primaryBeanName = null;
+		for (Map.Entry<String, Object> entry : candidates.entrySet()) {
+			String candidateBeanName = entry.getKey();
+			Object beanInstance = entry.getValue();
+            
+            //在这里进行判断的
+			if (isPrimary(candidateBeanName, beanInstance)) {
+				if (primaryBeanName != null) {
+					boolean candidateLocal = containsBeanDefinition(candidateBeanName);
+					boolean primaryLocal = containsBeanDefinition(primaryBeanName);
+					if (candidateLocal && primaryLocal) {
+						throw new NoUniqueBeanDefinitionException(requiredType, candidates.size(),
+								"more than one 'primary' bean found among candidates: " + candidates.keySet());
+					}
+					else if (candidateLocal) {
+						primaryBeanName = candidateBeanName;
+					}
+				}
+				else {
+					primaryBeanName = candidateBeanName;
+				}
+			}
+		}
+        //返回，DefaultListableBeanFactory # determineAutowireCandidate
+		return primaryBeanName;
+	}
+```
+
+
+
+
+
+##### DefaultListableBeanFactory # isPrimary() 源码：
+
+```java
+/**
+	 * Return whether the bean definition for the given bean name has been
+	 * marked as a primary bean.
+	 * @param beanName the name of the bean
+	 * @param beanInstance the corresponding bean instance (can be null)
+	 * @return whether the given bean qualifies as primary
+	 */
+	protected boolean isPrimary(String beanName, Object beanInstance) {
+		String transformedBeanName = transformedBeanName(beanName);
+		if (containsBeanDefinition(transformedBeanName)) {
+            
+            /**
+            	这个方法就在我们的 BeanDefinition 的元信息里面 -> isPrimary()
+            	
+            	默认情况下 BeanDefinition 的实现类 AbstractBeanDefinition 默认 false
+            	private boolean primary = false;
+            	
+            	superUser 在 XMLBeanDefinitionReader # loadBeanDefinitions 的时候就已经把 primary 标签解析，
+            	放入了 BeanDefinition 中了。所以 superUser 的 primary = true。
+            */
+            
+			return getMergedLocalBeanDefinition(transformedBeanName).isPrimary();
+		}
+		BeanFactory parent = getParentBeanFactory();
+        
+        //返回，DefaultListableBeanFactory # determinePrimaryCandidate()
+		return (parent instanceof DefaultListableBeanFactory &&
+				((DefaultListableBeanFactory) parent).isPrimary(transformedBeanName, beanInstance));
+	}
+```
+
+
+
+这一整个分析就运用到了最开始说的三个点：
+
+##### DefaultListableBeanFactory # resolveDependency		入口
+
+##### DependencyDescriptor		依赖描述符
+
+​	包含了注入的元信息。
+
+##### AutowireCandidateResolver		自动绑定候选处理器
+
+
+
+看完这点还不能超神。。。后面还要深入理解和研究。
+
+
+
+
+
+#### 集合类的 @Autowired 注入，Spring 做了哪些处理？
+
+继续回到 **AnnotationDependencyInjectResolutionDemo.java** 
+
+
+
+```java
+// key 就是 beanName，value 就是返回的 User 对象 -> 集合类型的依赖注入
+@Autowired
+private Map<String,User> users;
+```
+
+
+
+DefaultListableBeanFactory # resolveDependency 的第一个断点不变。直接到 doResolveDependency() 方法，去看重点。
+
+一直到 
+
+```java
+InjectionPoint previousInjectionPoint = ConstructorResolver.setCurrentInjectionPoint(descriptor);
+```
+
+shortcut（快捷方式） 还是 null -> 不看
+
+```java
+Object shortcut = descriptor.resolveShortcut(this);
+```
+
+
+
+BeanFactory的自动装配候选解析器 也是空 -> 不看
+
+```java
+Object value = getAutowireCandidateResolver().getSuggestedValue(descriptor);
+```
+
+
+
+咱们注入的 集合 User 是 Map<String,User> 这里也是空，假如是 List 或者数组这里就有了。 pass
+
+```java
+Object multipleBeans = resolveMultipleBeans(descriptor, beanName, autowiredBeanNames, typeConverter);
+```
+
+
+
+寻找自动注入的候选者还是两个 -> User 、SuperUser
+
+```java
+Map<String, Object> matchingBeans = findAutowireCandidates(beanName, type, descriptor);
+```
+
+
+
+在给定的bean组中确定自动装配候选。返回的还是 SuperUser。
+
+```java
+autowiredBeanName = determineAutowireCandidate(matchingBeans, descriptor);
+```
+
+
+
+还是获取的 SuperUser
+
+```java
+instanceCandidate = matchingBeans.get(autowiredBeanName);
+```
+
+
+
+依然添加 SuperUser 的 beanName -> superUser
+
+```java
+if (autowiredBeanNames != null) {
+	autowiredBeanNames.add(autowiredBeanName);
+}
+```
+
+
+
+创建出 SuperUser
+
+```java
+if (instanceCandidate instanceof Class) {
+	instanceCandidate = descriptor.resolveCandidate(autowiredBeanName, type, this);
+}
+```
+
+
+
+返回 SuperUser 对象和之前一样。这里当做回顾一下之前看的那一遍单一类型自动依赖注入。。哈哈
+
+
+
+##### 第二次进来就是集合类型自动注入了~
+
+字段的名称变化了~
+
+![image-20200916010044304](C:\Users\WTY\AppData\Roaming\Typora\typora-user-images\image-20200916010044304.png)
+
+
+
+字段的类型也变了~
+
+![image-20200916010226170](C:\Users\WTY\AppData\Roaming\Typora\typora-user-images\image-20200916010226170.png)
+
+
+
+这一次就会走到 **resolveMultipleBeans()** 方法里面来了
+
+
+
+##### DefaultListableBeanFactory # resolveMultipleBeans 源码 ：
+
+```java
+@Nullable
+	private Object resolveMultipleBeans(DependencyDescriptor descriptor, @Nullable String beanName,
+			@Nullable Set<String> autowiredBeanNames, @Nullable TypeConverter typeConverter) {
+
+        //从上面那个图可以看出，这里是个 Map.class
+		final Class<?> type = descriptor.getDependencyType();
+
+        //判断给的是不是一个 java8 的 stream 类型
+		if (descriptor instanceof StreamDependencyDescriptor) {
+			Map<String, Object> matchingBeans = findAutowireCandidates(beanName, type, descriptor);
+			if (autowiredBeanNames != null) {
+				autowiredBeanNames.addAll(matchingBeans.keySet());
+			}
+			Stream<Object> stream = matchingBeans.keySet().stream()
+					.map(name -> descriptor.resolveCandidate(name, type, this))
+					.filter(bean -> !(bean instanceof NullBean));
+			if (((StreamDependencyDescriptor) descriptor).isOrdered()) {
+				stream = stream.sorted(adaptOrderComparator(matchingBeans));
+			}
+			return stream;
+		}
+        //是否为数组
+		else if (type.isArray()) {
+			Class<?> componentType = type.getComponentType();
+			ResolvableType resolvableType = descriptor.getResolvableType();
+			Class<?> resolvedArrayType = resolvableType.resolve(type);
+			if (resolvedArrayType != type) {
+				componentType = resolvableType.getComponentType().resolve();
+			}
+			if (componentType == null) {
+				return null;
+			}
+			Map<String, Object> matchingBeans = findAutowireCandidates(beanName, componentType,
+					new MultiElementDescriptor(descriptor));
+			if (matchingBeans.isEmpty()) {
+				return null;
+			}
+			if (autowiredBeanNames != null) {
+				autowiredBeanNames.addAll(matchingBeans.keySet());
+			}
+			TypeConverter converter = (typeConverter != null ? typeConverter : getTypeConverter());
+			Object result = converter.convertIfNecessary(matchingBeans.values(), resolvedArrayType);
+			if (result instanceof Object[]) {
+				Comparator<Object> comparator = adaptDependencyComparator(matchingBeans);
+				if (comparator != null) {
+					Arrays.sort((Object[]) result, comparator);
+				}
+			}
+			return result;
+		}
+        //是否是单值类集合
+		else if (Collection.class.isAssignableFrom(type) && type.isInterface()) {
+			Class<?> elementType = descriptor.getResolvableType().asCollection().resolveGeneric();
+			if (elementType == null) {
+				return null;
+			}
+			Map<String, Object> matchingBeans = findAutowireCandidates(beanName, elementType,
+					new MultiElementDescriptor(descriptor));
+			if (matchingBeans.isEmpty()) {
+				return null;
+			}
+			if (autowiredBeanNames != null) {
+				autowiredBeanNames.addAll(matchingBeans.keySet());
+			}
+			TypeConverter converter = (typeConverter != null ? typeConverter : getTypeConverter());
+			Object result = converter.convertIfNecessary(matchingBeans.values(), type);
+            //是否为 List
+			if (result instanceof List) {
+				Comparator<Object> comparator = adaptDependencyComparator(matchingBeans);
+				if (comparator != null) {
+					((List<?>) result).sort(comparator);
+				}
+			}
+			return result;
+		}
+        //是否为 Map 键值对集合
+		else if (Map.class == type) {
+            /**
+            	我们注入的字段是 AnnotationDependencyInjectionResolutionDemo 里面的 users
+            	所以在 DependencyDescriptor 里面就有一个对应的关系放在 Field 里面。
+            	我们可以看一下泛型相关的东西，后面迟早要看，先看一眼
+
+				((Field)descript.getAnnotatedElement()).getGenericInfo()
+				
+				可以看到 genericType 是一个 Map<String,User>
+				
+				这样一个 API 就简化了 java 8 的操作
+            	
+            */
+			ResolvableType mapType = descriptor.getResolvableType().asMap();
+            //获取 key 的 Class
+			Class<?> keyType = mapType.resolveGeneric(0);
+			if (String.class != keyType) {
+				return null;
+			}
+            //获取 value 的 Class，暴露集合对象的元素信息，可以作为 Bean 的 type（User）
+			Class<?> valueType = mapType.resolveGeneric(1);
+			if (valueType == null) {
+				return null;
+			}
+            
+            //由于 value 会暴露集合对象的元素信息，这样 findAutowireCandidates 可以通过类型查找，得到两个 User
+			Map<String, Object> matchingBeans = findAutowireCandidates(beanName, valueType,
+					new MultiElementDescriptor(descriptor));
+			if (matchingBeans.isEmpty()) {
+				return null;
+			}
+			if (autowiredBeanNames != null) {
+				autowiredBeanNames.addAll(matchingBeans.keySet());
+			}
+            //返回结果
+			return matchingBeans;
+		}
+		else {
+			return null;
+		}
+	}
+```
+
+
+
+
+
+### 其实还没完。。。还一个 Optional 的例子。
+
+```java
+//这个是有填充的 肯定是选 primary，因此这里返回的 User 是 SuperUser
+@Autowired
+private Optional<User> userOptional;
+```
+
+
+
+这个时候 **DefaultListableBeanFactory # resolveDependency()** 中的 **Optional.class** 判断的地方就会触发：
+
+```java
+@Override
+	@Nullable
+	public Object resolveDependency(DependencyDescriptor descriptor, @Nullable String requestingBeanName,
+			@Nullable Set<String> autowiredBeanNames, @Nullable TypeConverter typeConverter) throws BeansException {
+
+		descriptor.initParameterNameDiscovery(getParameterNameDiscoverer());
+        
+        /**
+        	这个地方~~~~
+        	不先管 DependencyDescriptor 里面的 类型
+        	
+        	((Field)descriptor.getAnnotatedElement()).getType().getGenericInfo()
+
+			...
+			factory = CoreReflectionFactory 这里面 decl 的 name 就是 java.util.Optional
+			tree = ClassTypeSignature
+        */
+		if (Optional.class == descriptor.getDependencyType()) {
+			return createOptionalDependency(descriptor, requestingBeanName);
+		}
+		else if (ObjectFactory.class == descriptor.getDependencyType() ||
+				ObjectProvider.class == descriptor.getDependencyType()) {
+			return new DependencyObjectProvider(descriptor, requestingBeanName);
+		}
+		else if (javaxInjectProviderClass == descriptor.getDependencyType()) {
+			return new Jsr330Factory().createDependencyProvider(descriptor, requestingBeanName);
+		}
+		else {
+			Object result = getAutowireCandidateResolver().getLazyResolutionProxyIfNecessary(
+					descriptor, requestingBeanName);
+			if (result == null) {
+				result = doResolveDependency(descriptor, requestingBeanName, autowiredBeanNames, typeConverter);
+			}
+			return result;
+		}
+	}
+```
+
+
+
+@Lazy 的处理方式
+
+```java
+@Autowired
+@Lazy
+private User lazyUser;
+```
+
+
+
+![image-20200916014023658](C:\Users\WTY\AppData\Roaming\Typora\typora-user-images\image-20200916014023658.png)
+
+
+
+这里会返回一个 CGLIB 增强的对象，为什么呢？
+
+因为这个时候并没有执行任何相关的依赖查找工作，而是返回一个代理对象，当方法去执行的时候，再进行依赖查找，在依赖查找的时候执行 resolve，
+
+因此 DefaultListableBeanFactory # doResolveDependency 米有进。
+
+
+
+### 总结：
+
+​		我们今天讨论了 单一注入、延迟注入、集合注入 的方式在 Spring IoC 依赖处理过程中，主要是通过 DefaultListableBeanFactory # resolveDependency 作
+
+为入口，同时可以处理 Optional 对象封装、类型封装、ObjectFactory  + ObjectProvider，以及 JSR-330 （Rod Johnson 提出的关于 Java EE 里面的依赖注入方案 
+
+-> @Inject）。除此之外就是去处理 Spring 的默认操作，Spring 的默认依赖处理主要是在 DefaultListableBeanFactory # resolveDependency 里面来做的。
+
+只不过依赖处理是依赖注入的一个环节，在注入的过程中，把对象的依赖进行解析，然后插入（反射）的方式来调入。
+
+
+
+下一章继续讨论 @Autowired 注解处理依赖注入的一个基本过程。
