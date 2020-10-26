@@ -18,6 +18,14 @@
             <version>${version}</version>
             <scope>compile</scope>
         </dependency>
+
+        <!-- JSR - 330 -->
+        <dependency>
+            <groupId>javax.inject</groupId>
+            <artifactId>javax.inject</artifactId>
+            <version>1</version>
+        </dependency>
+
     </dependencies>
 
 </project>

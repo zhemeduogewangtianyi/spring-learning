@@ -13641,3 +13641,648 @@ private User lazyUser;
 
 
 下一章继续讨论 @Autowired 注解处理依赖注入的一个基本过程。
+
+
+
+
+
+## 14：@Autowired 注入：@Autowired 注入的规则和原理有哪些？
+
+
+
+### @Autowired 注入过程
+
+
+
+### 	·	元信息解析
+
+​			在前面自动依赖注入处理过程中我们看到有一个类叫做 DependencyDescriptor 的类（依赖描述符），这里面记录了我要注入的对象是哪个字段，例如字段名称、字段相关的元信息（ Java 反射中的 Field ，4.3 引入的 InjectionPoint ）。这部分就会把相关的元信息全部加载进来，帮助我们去分析字段类型，方法名称等等。
+
+### 	·	依赖查找
+
+​			这里可以认为是依赖处理。
+
+### 	·	依赖注入（字段、方法）
+
+
+
+我们可以看出基本的一个操作思路，首先解析，其次依赖查找，最后注入到字段或者方法。
+
+解析就是指：谁要进行注入；
+
+查找就是指：查找出依赖的根源；
+
+注入到字段或方法是指：注入的一个对象
+
+
+
+##### 再来到我们的 DefaultListableBeanFactory # resolveDependency 方法：
+
+```java
+	@Override
+	@Nullable
+	public Object resolveDependency(DependencyDescriptor descriptor, @Nullable String requestingBeanName,
+			@Nullable Set<String> autowiredBeanNames, @Nullable TypeConverter typeConverter) throws BeansException {
+
+		descriptor.initParameterNameDiscovery(getParameterNameDiscoverer());
+		if (Optional.class == descriptor.getDependencyType()) {
+			return createOptionalDependency(descriptor, requestingBeanName);
+		}
+		else if (ObjectFactory.class == descriptor.getDependencyType() ||
+				ObjectProvider.class == descriptor.getDependencyType()) {
+			return new DependencyObjectProvider(descriptor, requestingBeanName);
+		}
+		else if (javaxInjectProviderClass == descriptor.getDependencyType()) {
+			return new Jsr330Factory().createDependencyProvider(descriptor, requestingBeanName);
+		}
+		else {
+			Object result = getAutowireCandidateResolver().getLazyResolutionProxyIfNecessary(
+					descriptor, requestingBeanName);
+			if (result == null) {
+				result = doResolveDependency(descriptor, requestingBeanName, autowiredBeanNames, typeConverter);
+			}
+			return result;
+		}
+	}
+```
+
+
+
+在这里打断点， IDEA 会有一个调用链的堆栈，
+
+![image-20200916223751672](C:\Users\WTY\AppData\Roaming\Typora\typora-user-images\image-20200916223751672.png)
+
+
+
+这里有一个类是 **AutowiredAnnotationBeanPostProcessor**，这里面有一个嵌套类叫做 **AutowiredFieldElement**（自动绑定的元素，是个内置类） 点一下进去。
+
+
+
+##### AutowiredAnnotationBeanPostProcessor 源码：
+
+```java
+		/**
+			bean : 我们的 AnnotationDependencyInjectionDemo
+			beanName : annotationDependencyInjectionDemo 通过 BeanNameGeneric 首字母大写。
+		*/
+		@Override
+		protected void inject(Object bean, @Nullable String beanName, @Nullable PropertyValues pvs) throws Throwable {
+			
+            /**
+            	这里的 Field 并不是所有的 Field ，只有标注了 @Autowired 注解的字段
+            	可以猜测到，前面的操作肯定做了一些筛选，来进行查找查找的。
+            	可以猜到我们的 AnnotationDependencyInjectionDemo 会有四个字段，因为我们标注了四个 @Autowired 字段
+            	这里会跑 4 遍，虽然我们的 4 个字段是各种不同的包装，但是那些只是说依赖注入处理过程的不同，和这里的依赖注入没关系。
+            	依赖注入这里只关心我能找到我相关的被注入的对象，并且能够反射赋值就行了
+            	
+            	元信息解析，主要是关于字段的操作
+            */
+            Field field = (Field) this.member;
+			Object value;
+			if (this.cached) {
+				value = resolvedCachedArgument(beanName, this.cachedFieldValue);
+			}
+			else {
+                //从这里创建的 DependencyDescriptor 对象，发现可以把字段丢进去，也可以把是否必须丢进去
+				DependencyDescriptor desc = new DependencyDescriptor(field, this.required);
+				desc.setContainingClass(bean.getClass());
+				Set<String> autowiredBeanNames = new LinkedHashSet<>(1);
+				Assert.state(beanFactory != null, "No BeanFactory available");
+				TypeConverter typeConverter = beanFactory.getTypeConverter();
+				try {
+                    //1：这里属于依赖处理的过程，这个 value 会在后面以反射的方式赋值
+                    //这里主要是找到我们要依赖注入的的对象
+					value = beanFactory.resolveDependency(desc, beanName, autowiredBeanNames, typeConverter);
+				}
+				catch (BeansException ex) {
+					throw new UnsatisfiedDependencyException(null, beanName, new InjectionPoint(field), ex);
+				}
+				synchronized (this) {
+					if (!this.cached) {
+						if (value != null || this.required) {
+							this.cachedFieldValue = desc;
+							registerDependentBeans(beanName, autowiredBeanNames);
+							if (autowiredBeanNames.size() == 1) {
+								String autowiredBeanName = autowiredBeanNames.iterator().next();
+								if (beanFactory.containsBean(autowiredBeanName) &&
+										beanFactory.isTypeMatch(autowiredBeanName, field.getType())) {
+									this.cachedFieldValue = new ShortcutDependencyDescriptor(
+											desc, autowiredBeanName, field.getType());
+								}
+							}
+						}
+						else {
+							this.cachedFieldValue = null;
+						}
+						this.cached = true;
+					}
+				}
+			}
+			if (value != null) {
+                //反射的方式赋值
+                //找到依赖注入相应的字段，进行赋值
+				ReflectionUtils.makeAccessible(field);
+				field.set(bean, value);
+			}
+		}
+	}
+```
+
+
+
+同样道理，根据 IDEA 给的调用链路继续往上找 **InjectionMetadata # inject() **
+
+```java
+public void inject(Object target, @Nullable String beanName, @Nullable PropertyValues pvs) throws Throwable {
+		Collection<InjectedElement> checkedElements = this.checkedElements;
+		Collection<InjectedElement> elementsToIterate =
+				(checkedElements != null ? checkedElements : this.injectedElements);
+		if (!elementsToIterate.isEmpty()) {
+			for (InjectedElement element : elementsToIterate) {
+				if (logger.isTraceEnabled()) {
+					logger.trace("Processing injected element of bean '" + beanName + "': " + element);
+				}
+				element.inject(target, beanName, pvs);
+			}
+		}
+	}
+```
+
+
+
+**AutowiredAnnotationBeanPostProcessor # postProcessProperties()** 
+
+这里涉及了一些 Spring Bean 生命周期的东西，通过这个 postProcessProperties() 找他的父类，
+
+##### -> InstantiationAwareBeanPostProcessorAdaptor
+
+##### 	->InstantiationAwareBeanPostProcessor （这是个接口）发现这个方法是 Spring 5.1 的时候新加的，老版本的方法在下面，标注了不推荐使用
+
+字面意思来看 InstantiationAwareBeanPostProcessor 的意思是 **具有初始化意识的 BeanPostProcessor **，继承了 **BeanPostProcessor**
+
+
+
+##### BeanPostProcessor 源码：对 Bean 初始化之前，之后，对自定义的 Bean 做一些初始化的操作
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.config;
+
+import org.springframework.beans.BeansException;
+import org.springframework.lang.Nullable;
+
+/**
+ * Factory hook that allows for custom modification of new bean instances &mdash;
+ * for example, checking for marker interfaces or wrapping beans with proxies.
+ *
+ * <p>Typically, post-processors that populate beans via marker interfaces
+ * or the like will implement {@link #postProcessBeforeInitialization},
+ * while post-processors that wrap beans with proxies will normally
+ * implement {@link #postProcessAfterInitialization}.
+ *
+ * <h3>Registration</h3>
+ * <p>An {@code ApplicationContext} can autodetect {@code BeanPostProcessor} beans
+ * in its bean definitions and apply those post-processors to any beans subsequently
+ * created. A plain {@code BeanFactory} allows for programmatic registration of
+ * post-processors, applying them to all beans created through the bean factory.
+ *
+ * <h3>Ordering</h3>
+ * <p>{@code BeanPostProcessor} beans that are autodetected in an
+ * {@code ApplicationContext} will be ordered according to
+ * {@link org.springframework.core.PriorityOrdered} and
+ * {@link org.springframework.core.Ordered} semantics. In contrast,
+ * {@code BeanPostProcessor} beans that are registered programmatically with a
+ * {@code BeanFactory} will be applied in the order of registration; any ordering
+ * semantics expressed through implementing the
+ * {@code PriorityOrdered} or {@code Ordered} interface will be ignored for
+ * programmatically registered post-processors. Furthermore, the
+ * {@link org.springframework.core.annotation.Order @Order} annotation is not
+ * taken into account for {@code BeanPostProcessor} beans.
+ *
+ * @author Juergen Hoeller
+ * @author Sam Brannen
+ * @since 10.10.2003
+ * @see InstantiationAwareBeanPostProcessor
+ * @see DestructionAwareBeanPostProcessor
+ * @see ConfigurableBeanFactory#addBeanPostProcessor
+ * @see BeanFactoryPostProcessor
+ */
+public interface BeanPostProcessor {
+
+	/**
+	 * Apply this {@code BeanPostProcessor} to the given new bean instance <i>before</i> any bean
+	 * initialization callbacks (like InitializingBean's {@code afterPropertiesSet}
+	 * or a custom init-method). The bean will already be populated with property values.
+	 * The returned bean instance may be a wrapper around the original.
+	 * <p>The default implementation returns the given {@code bean} as-is.
+	 * @param bean the new bean instance
+	 * @param beanName the name of the bean
+	 * @return the bean instance to use, either the original or a wrapped one;
+	 * if {@code null}, no subsequent BeanPostProcessors will be invoked
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see org.springframework.beans.factory.InitializingBean#afterPropertiesSet
+	 */
+	@Nullable
+	default Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+		return bean;
+	}
+
+	/**
+	 * Apply this {@code BeanPostProcessor} to the given new bean instance <i>after</i> any bean
+	 * initialization callbacks (like InitializingBean's {@code afterPropertiesSet}
+	 * or a custom init-method). The bean will already be populated with property values.
+	 * The returned bean instance may be a wrapper around the original.
+	 * <p>In case of a FactoryBean, this callback will be invoked for both the FactoryBean
+	 * instance and the objects created by the FactoryBean (as of Spring 2.0). The
+	 * post-processor can decide whether to apply to either the FactoryBean or created
+	 * objects or both through corresponding {@code bean instanceof FactoryBean} checks.
+	 * <p>This callback will also be invoked after a short-circuiting triggered by a
+	 * {@link InstantiationAwareBeanPostProcessor#postProcessBeforeInstantiation} method,
+	 * in contrast to all other {@code BeanPostProcessor} callbacks.
+	 * <p>The default implementation returns the given {@code bean} as-is.
+	 * @param bean the new bean instance
+	 * @param beanName the name of the bean
+	 * @return the bean instance to use, either the original or a wrapped one;
+	 * if {@code null}, no subsequent BeanPostProcessors will be invoked
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see org.springframework.beans.factory.InitializingBean#afterPropertiesSet
+	 * @see org.springframework.beans.factory.FactoryBean
+	 */
+	@Nullable
+	default Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+		return bean;
+	}
+
+}
+
+```
+
+
+
+##### InstantiationAwareBeanPostProcessor 源码：
+
+```java
+/*
+ * Copyright 2002-2019 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.config;
+
+import java.beans.PropertyDescriptor;
+
+import org.springframework.beans.BeansException;
+import org.springframework.beans.PropertyValues;
+import org.springframework.lang.Nullable;
+
+/**
+ * Subinterface of {@link BeanPostProcessor} that adds a before-instantiation callback,
+ * and a callback after instantiation but before explicit properties are set or
+ * autowiring occurs.
+ *
+ * <p>Typically used to suppress default instantiation for specific target beans,
+ * for example to create proxies with special TargetSources (pooling targets,
+ * lazily initializing targets, etc), or to implement additional injection strategies
+ * such as field injection.
+ *
+ * <p><b>NOTE:</b> This interface is a special purpose interface, mainly for
+ * internal use within the framework. It is recommended to implement the plain
+ * {@link BeanPostProcessor} interface as far as possible, or to derive from
+ * {@link InstantiationAwareBeanPostProcessorAdapter} in order to be shielded
+ * from extensions to this interface.
+ *
+ * @author Juergen Hoeller
+ * @author Rod Johnson
+ * @since 1.2
+ * @see org.springframework.aop.framework.autoproxy.AbstractAutoProxyCreator#setCustomTargetSourceCreators
+ * @see org.springframework.aop.framework.autoproxy.target.LazyInitTargetSourceCreator
+ */
+public interface InstantiationAwareBeanPostProcessor extends BeanPostProcessor {
+
+	/**
+	 * Apply this BeanPostProcessor <i>before the target bean gets instantiated</i>.
+	 * The returned bean object may be a proxy to use instead of the target bean,
+	 * effectively suppressing default instantiation of the target bean.
+	 * <p>If a non-null object is returned by this method, the bean creation process
+	 * will be short-circuited. The only further processing applied is the
+	 * {@link #postProcessAfterInitialization} callback from the configured
+	 * {@link BeanPostProcessor BeanPostProcessors}.
+	 * <p>This callback will be applied to bean definitions with their bean class,
+	 * as well as to factory-method definitions in which case the returned bean type
+	 * will be passed in here.
+	 * <p>Post-processors may implement the extended
+	 * {@link SmartInstantiationAwareBeanPostProcessor} interface in order
+	 * to predict the type of the bean object that they are going to return here.
+	 * <p>The default implementation returns {@code null}.
+	 * @param beanClass the class of the bean to be instantiated
+	 * @param beanName the name of the bean
+	 * @return the bean object to expose instead of a default instance of the target bean,
+	 * or {@code null} to proceed with default instantiation
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see #postProcessAfterInstantiation
+	 * @see org.springframework.beans.factory.support.AbstractBeanDefinition#getBeanClass()
+	 * @see org.springframework.beans.factory.support.AbstractBeanDefinition#getFactoryMethodName()
+	 */
+	@Nullable
+	default Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
+		return null;
+	}
+
+	/**
+	 * Perform operations after the bean has been instantiated, via a constructor or factory method,
+	 * but before Spring property population (from explicit properties or autowiring) occurs.
+	 * <p>This is the ideal callback for performing custom field injection on the given bean
+	 * instance, right before Spring's autowiring kicks in.
+	 * <p>The default implementation returns {@code true}.
+	 * @param bean the bean instance created, with properties not having been set yet
+	 * @param beanName the name of the bean
+	 * @return {@code true} if properties should be set on the bean; {@code false}
+	 * if property population should be skipped. Normal implementations should return {@code true}.
+	 * Returning {@code false} will also prevent any subsequent InstantiationAwareBeanPostProcessor
+	 * instances being invoked on this bean instance.
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see #postProcessBeforeInstantiation
+	 */
+	default boolean postProcessAfterInstantiation(Object bean, String beanName) throws BeansException {
+		return true;
+	}
+
+	/**
+	
+		它对应这我们的 AbstractBeanDefinition 的 setPropertiesValues()
+		
+
+		public void setPropertyValues(MutablePropertyValues propertyValues) {
+			this.propertyValues = propertyValues;
+		}
+		
+		MutablePropertyValues：使我们的属性和 value 对应起来
+		
+		简单说，找到我们的 dependency-lookup-context.xml，里面配置很多 bean 标签，
+		bean 标签里面包含了很多属性 property 标签
+		
+		这些东西就是我们看到的 setPropertyValues() 所需要的的东西
+		
+		可以去 setPropertyValues() 里面打个断点，第一个 User 对象有七个属性，所以就会有对应的七个内容
+		这七个内容的类型（PropertyValue 的 value 属性）都是 TypedStringValue ，也就是 String 类型
+		
+		综上实验可以得出结论，setPropertyValue 就是把我们的 XML 解析成 Spring 对象的一个过程 
+		
+		假如说在 User 对象的 setId 方法打个断点，Spring 就会通过反射的类型 把 String 的 value 值，映射
+		成为一个 Long 类型的 value 值，并且赋值给 User 对象。
+		
+		这里涉及了两步操作：
+			1：读取 XML 配置，把 XML 内容变成配置项；
+			2：配置项进行类型转换，赋值
+	
+	 * Post-process the given property values before the factory applies them
+	 * to the given bean, without any need for property descriptors.
+	 * <p>Implementations should return {@code null} (the default) if they provide a custom
+	 * {@link #postProcessPropertyValues} implementation, and {@code pvs} otherwise.
+	 * In a future version of this interface (with {@link #postProcessPropertyValues} removed),
+	 * the default implementation will return the given {@code pvs} as-is directly.
+	 * @param pvs the property values that the factory is about to apply (never {@code null})
+	 * @param bean the bean instance created, but whose properties have not yet been set
+	 * @param beanName the name of the bean
+	 * @return the actual property values to apply to the given bean (can be the passed-in
+	 * PropertyValues instance), or {@code null} which proceeds with the existing properties
+	 * but specifically continues with a call to {@link #postProcessPropertyValues}
+	 * (requiring initialized {@code PropertyDescriptor}s for the current bean class)
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @since 5.1
+	 * @see #postProcessPropertyValues
+	 */
+	@Nullable
+	default PropertyValues postProcessProperties(PropertyValues pvs, Object bean, String beanName)
+			throws BeansException {
+
+		return null;
+	}
+
+	/**
+	 * Post-process the given property values before the factory applies them
+	 * to the given bean. Allows for checking whether all dependencies have been
+	 * satisfied, for example based on a "Required" annotation on bean property setters.
+	 * <p>Also allows for replacing the property values to apply, typically through
+	 * creating a new MutablePropertyValues instance based on the original PropertyValues,
+	 * adding or removing specific values.
+	 * <p>The default implementation returns the given {@code pvs} as-is.
+	 * @param pvs the property values that the factory is about to apply (never {@code null})
+	 * @param pds the relevant property descriptors for the target bean (with ignored
+	 * dependency types - which the factory handles specifically - already filtered out)
+	 * @param bean the bean instance created, but whose properties have not yet been set
+	 * @param beanName the name of the bean
+	 * @return the actual property values to apply to the given bean (can be the passed-in
+	 * PropertyValues instance), or {@code null} to skip property population
+	 * @throws org.springframework.beans.BeansException in case of errors
+	 * @see #postProcessProperties
+	 * @see org.springframework.beans.MutablePropertyValues
+	 * @deprecated as of 5.1, in favor of {@link #postProcessProperties(PropertyValues, Object, String)}
+	 */
+	@Deprecated
+	@Nullable
+	default PropertyValues postProcessPropertyValues(
+			PropertyValues pvs, PropertyDescriptor[] pds, Object bean, String beanName) throws BeansException {
+
+		return pvs;
+	}
+
+}
+
+```
+
+
+
+在这个方法里面也打个断点，看一下到底 是属性被应用之前操作，还是被应用之后操作，谁先谁后？？？
+
+##### 答案是 postProcessProperties 会在 set 赋值之前执行。最后才反射赋值。。。
+
+当我们去映射的时候，那么 postProcessProperties 方法，会在 set() 执行之前，来提前执行。
+
+这有什么好处？？
+
+这就可以提前帮我们在没赋值之前，我就把元信息进行注入。
+
+
+
+**AutowiredAnnotationBeanPostProcessor # postProcessProperties()**
+
+```java
+	@Override
+	public PropertyValues postProcessProperties(PropertyValues pvs, Object bean, String beanName) 
+        
+        /**
+        	这个方法里面有很多的 Cache，想一下在 Cache 构建好之前又是什么过程呢？
+        	这就涉及到了另外一个周期的过程，这个周期比较复杂。
+        	
+        	可以去看 AutowiredAnnotationBeanPostProcesor 里面有另外一个 Process 的扩展 - MergedBeanDefinitionPostProcessor
+        	
+        	MergedBeanDefinitionPostProcessor 是干什么用的？
+        	
+        	回到我们的 dependency-lookup-context.xml 里面：
+        	
+        		可以看到我们的 user 配置是一个普通类（根类），因为他是没有标记 parent（继承） 的。
+        		但是 superUser 配置是一个有父类的（User 是他的父类）。
+        		可以得出 superUser 是 user，但是 user 不是 superUser
+        		预期要达到的效果是，创建 superUser 的时候，user 的属性要一起跟过去，创建 user 的时候 superUser 的属性不用跟过去。
+        		这就是刚才在 AbstractBeanDefinition # setPropertyValues 打断点的时候，superUser 比 user 多一个字段的原因。
+        	
+        */
+		InjectionMetadata metadata = findAutowiringMetadata(beanName, bean.getClass(), pvs);
+		try {
+			metadata.inject(bean, beanName, pvs);
+		}
+		catch (BeanCreationException ex) {
+			throw ex;
+		}
+		catch (Throwable ex) {
+			throw new BeanCreationException(beanName, "Injection of autowired dependencies failed", ex);
+		}
+		return pvs;
+	}
+```
+
+
+
+##### MergedAnnotationBeanPostProcessor 源码：
+
+```java
+/*
+ * Copyright 2002-2018 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.springframework.beans.factory.support;
+
+import org.springframework.beans.factory.config.BeanPostProcessor;
+
+/**
+ * Post-processor callback interface for <i>merged</i> bean definitions at runtime.
+ * {@link BeanPostProcessor} implementations may implement this sub-interface in order
+ * to post-process the merged bean definition (a processed copy of the original bean
+ * definition) that the Spring {@code BeanFactory} uses to create a bean instance.
+ *
+ * <p>The {@link #postProcessMergedBeanDefinition} method may for example introspect
+ * the bean definition in order to prepare some cached metadata before post-processing
+ * actual instances of a bean. It is also allowed to modify the bean definition but
+ * <i>only</i> for definition properties which are actually intended for concurrent
+ * modification. Essentially, this only applies to operations defined on the
+ * {@link RootBeanDefinition} itself but not to the properties of its base classes.
+ *
+ * @author Juergen Hoeller
+ * @since 2.5
+ * @see org.springframework.beans.factory.config.ConfigurableBeanFactory#getMergedBeanDefinition
+ */
+public interface MergedBeanDefinitionPostProcessor extends BeanPostProcessor {
+
+	/**
+		这里是说 当我们的 Bean 被 Merge 完了之后，或产生以回调，可以看 AutowiredAnnotationBeanPostProcess 的实现
+	 * Post-process the given merged bean definition for the specified bean.
+	 * @param beanDefinition the merged bean definition for the bean
+	 * @param beanType the actual type of the managed bean instance
+	 * @param beanName the name of the bean
+	 * @see AbstractAutowireCapableBeanFactory#applyMergedBeanDefinitionPostProcessors
+	 */
+	void postProcessMergedBeanDefinition(RootBeanDefinition beanDefinition, Class<?> beanType, String beanName);
+
+	/**
+	 * A notification that the bean definition for the specified name has been reset,
+	 * and that this post-processor should clear any metadata for the affected bean.
+	 * <p>The default implementation is empty.
+	 * @param beanName the name of the bean
+	 * @since 5.1
+	 * @see DefaultListableBeanFactory#resetBeanDefinition
+	 */
+	default void resetBeanDefinition(String beanName) {
+	}
+
+}
+
+```
+
+
+
+##### AutowiredAnnotationBeanPostProcessor # postProcessMergeBeanDefinition 源码：
+
+```java
+	@Override
+	public void postProcessMergedBeanDefinition(RootBeanDefinition beanDefinition, Class<?> beanType, String beanName) {
+        /**
+        	这里会产生一次查找，只是为了检查配置
+        	其实就是去缓存里面去查找，那么什么时候放进缓存的呢？或者缓存没有怎么办？
+        */
+		InjectionMetadata metadata = findAutowiringMetadata(beanName, beanType, null);
+		metadata.checkConfigMembers(beanDefinition);
+	}
+```
+
+
+
+##### AutowiredAnnotationBeanPostProcessor # findAutowiringMetadata() 源码：
+
+```java
+/**
+	其实就是去缓存里面去查找，那么什么时候放进缓存的呢？或者缓存没有怎么办？
+*/
+private InjectionMetadata findAutowiringMetadata(String beanName, Class<?> clazz, @Nullable PropertyValues pvs) {
+		// Fall back to class name as cache key, for backwards compatibility with custom callers.
+		String cacheKey = (StringUtils.hasLength(beanName) ? beanName : clazz.getName());
+		// Quick check on the concurrent map first, with minimal locking.
+		InjectionMetadata metadata = this.injectionMetadataCache.get(cacheKey);
+		if (InjectionMetadata.needsRefresh(metadata, clazz)) {
+			synchronized (this.injectionMetadataCache) {
+				metadata = this.injectionMetadataCache.get(cacheKey);
+				if (InjectionMetadata.needsRefresh(metadata, clazz)) {
+					if (metadata != null) {
+						metadata.clear(pvs);
+					}
+                    //缓存里面没有的话就重新来进行构建
+					metadata = buildAutowiringMetadata(clazz);
+					this.injectionMetadataCache.put(cacheKey, metadata);
+				}
+			}
+		}
+		return metadata;
+	}
+```
+
+
+
+问题：MergedBeanDefinitionPostProcessor 的 postProcessorMergedBeanDefinition 先执行还是 AutowiredAnnotationBeanPostProcessor 的 postProcessProperties() 在前？
