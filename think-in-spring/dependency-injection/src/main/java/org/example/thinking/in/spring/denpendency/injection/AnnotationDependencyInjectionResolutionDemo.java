@@ -1,15 +1,18 @@
 package org.example.thinking.in.spring.denpendency.injection;
 
+import org.example.thinking.in.spring.denpendency.injection.annotation.InjectedUser;
+import org.example.thinking.in.spring.denpendency.injection.annotation.MyAutowired;
 import org.example.thinking.in.spring.ioc.overview.dependency.domain.User;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor;
 import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.context.annotation.*;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
 import javax.inject.Inject;
-import java.util.Map;
-import java.util.Optional;
+import java.lang.annotation.Annotation;
+import java.util.*;
 
 /**
  * 依赖注入处理过程示例代码
@@ -36,8 +39,35 @@ public class AnnotationDependencyInjectionResolutionDemo {
 //    private Map<String,User> users;
 
     //这个是有填充的 肯定是选 primary，因此这里返回的 User 是 SuperUser
-//    @Autowired
-//    private Optional<User> userOptional;
+    @MyAutowired
+    private Optional<User> userOptional;
+
+    @InjectedUser
+    public User getInjectedUser;
+
+//    @Bean(AnnotationConfigUtils.AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME)
+//    public static AutowiredAnnotationBeanPostProcessor injectedUserAutowiredAnnotationBeanPostProcessor(){
+//        AutowiredAnnotationBeanPostProcessor beanPostProcessor = new AutowiredAnnotationBeanPostProcessor();
+//        beanPostProcessor.setAutowiredAnnotationType(InjectedUser.class);
+//        return beanPostProcessor;
+//    }
+
+    /** 不安全，某个注解不存在 */
+//    @Bean(AnnotationConfigUtils.AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME)
+//    public static AutowiredAnnotationBeanPostProcessor injectedUserAutowiredAnnotationBeanPostProcessor(){
+//        AutowiredAnnotationBeanPostProcessor beanPostProcessor = new AutowiredAnnotationBeanPostProcessor();
+//        Set<Class<? extends Annotation>> set = new LinkedHashSet<>(Arrays.asList(Autowired.class,Inject.class,MyAutowired.class,InjectedUser.class));
+//        beanPostProcessor.setAutowiredAnnotationTypes(set);
+//        return beanPostProcessor;
+//    }
+
+    @Bean
+    @Order(value = Ordered.LOWEST_PRECEDENCE - 3)
+    public static AutowiredAnnotationBeanPostProcessor injectedUserAutowiredAnnotationBeanPostProcessor(){
+        AutowiredAnnotationBeanPostProcessor beanPostProcessor = new AutowiredAnnotationBeanPostProcessor();
+        beanPostProcessor.setAutowiredAnnotationType(InjectedUser.class);
+        return beanPostProcessor;
+    }
 
 
     public static void main(String[] args) {
@@ -64,7 +94,7 @@ public class AnnotationDependencyInjectionResolutionDemo {
 
         User user = demo.user;
 
-//        System.out.println(user);
+        System.out.println(user);
 
 //        System.out.println();
 
@@ -74,9 +104,9 @@ public class AnnotationDependencyInjectionResolutionDemo {
 //
 //        System.out.println();
 //
-//        Optional<User> userOptional = demo.userOptional;
-//
-//        System.out.println(userOptional.get());
+        Optional<User> userOptional = demo.userOptional;
+
+        System.out.println("userOptional.get()  " + userOptional.get());
 //
 //        System.out.println();
 //
@@ -85,6 +115,8 @@ public class AnnotationDependencyInjectionResolutionDemo {
 //        System.out.println(lazyUser);
 
         System.out.println("injected user : " + demo.injectedUser);
+
+        System.out.println("getInjectedUser user : " + demo.getInjectedUser);
 
         //关闭 Spring 容器上下文
         applicationContext.close();

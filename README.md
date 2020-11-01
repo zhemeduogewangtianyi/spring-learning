@@ -14286,3 +14286,87 @@ private InjectionMetadata findAutowiringMetadata(String beanName, Class<?> clazz
 
 
 问题：MergedBeanDefinitionPostProcessor 的 postProcessorMergedBeanDefinition 先执行还是 AutowiredAnnotationBeanPostProcessor 的 postProcessProperties() 在前？
+
+
+
+
+
+
+
+## 15：JSR-330 @Inject 注入：@Inject 和 @Autowired 的注入原理有怎么样的联系？
+
+
+
+#### @Inject 注入过程：
+
+​	如果 JSR-330 存在于 class path 中，复用 AutowiredAnnotationBeanPostProcessor 实现
+
+
+
+
+
+## 16：Java 通用注解注入原理：Spring 是如何实现 @Resource 和 @EJB 等注解注入的？
+
+
+
+java 1.6 以后引入的 API。
+
+
+
+##### CommonAnnotationBeanPostProcessor - 内建的依赖可查找的 Bean
+
+##### 	注入注解：
+
+##### 		javax.xml.ws.WebServiceRef
+
+##### 		javax.ejb.EJB
+
+##### 		javax.annoyation.Resource - jdk 1.6 引入
+
+
+
+##### 生命周期注解：
+
+##### 		javax.annotation.PostConstruct
+
+##### 		javax.annotation.PreDestroy
+
+
+
+
+
+##### 问题：AutowiredAnnotationBeanPostProcessor 和 CommonAnnotationBeanPostProcessor 有什么区别？
+
+AutowiredAnnotationBeanPostProcessor 是处理 @Autowired、@Value、@Inject 这种方式的一个依赖注入，CommonAnnotationBeanPostProcessor 主要是处理一个通用型的注解，包括：@WebServiceRef、@EJB、@Resource、@PostConstruct、@PreDestroy
+
+
+
+
+
+## 17：自定义依赖注入注解：如何最简化实现自定义依赖注入注解？
+
+
+
+##### 基于 AutowiredAnnotationBeanPostProcessor 实现
+
+
+
+##### 自定义实现：
+
+​	生命周期处理：
+
+​		InstantiationAwareBeanPostProcessor
+
+​		MegerdBeanDefinitionPostProcessor
+
+​	元数据：
+
+​		InjectedElement
+
+​		InjectionMetadata
+
+
+
+### 总结：
+
+​	通过扩展 AutowiredAnnotationBeanPostProcessor 的方式来自定义注解，例如 @MyAutowired，还一种方式就是类似于 @Inject 的方式，用 @Bean 在配置类里面新增一个 AutowiredAnnotationBeanPostProcessor 的配置类，标记为 static 可以提早触发 Bean 的注册，这样做可以让上下文中存在两个 AutowiredAnnotationBeanPostProcessor ，便于兼容新老两种注解处理，与此同时 static 生命的配置类也会提早的进行初始化。
